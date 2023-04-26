@@ -28,6 +28,7 @@ public partial class CameraRenderer
     /// <param name="camera">当前的摄像机</param>
     /// <param name="useDynamicBatching">是否开启动态批处理</param>
     /// <param name="useGPUInstancing">是否开启GPU实例化</param>
+    /// /// <param name="shadowSettings">阴影相关设置</param>
     public void Render(ScriptableRenderContext context, Camera camera, bool useDynamicBatching, bool useGPUInstancing, ShadowSettings shadowSettings)
     {
         this.context = context;
@@ -39,13 +40,20 @@ public partial class CameraRenderer
         if (!Cull(shadowSettings.maxDistance))
             return; // 剔除
 
+        buffer.BeginSample(SampleName);
+        ExecuteBuffer();
+        lighting.Setup(context, cullingResults, shadowSettings); //灯光相关设置 传递数据 渲染阴影等
+        buffer.EndSample(SampleName);
+        
         Setup(); // 初始设置
-        lighting.Setup(context, cullingResults, shadowSettings); //传递灯光数据
         DrawVisibleGeometry(useDynamicBatching, useGPUInstancing); // 绘制可见的几何体
         DrawUnsupportedShaders(); // 绘制不支持的shader
         DrawGizmos(); // 绘制编辑器图标
+        lighting.Cleanup(); //灯光相关的清理
         Submit(); //提交执行
     }
+    
+    ////////////////////////////////////////// 相机渲染流程相关函数 /////////////////////////////////////////////////////
 
     bool Cull(float maxShadowDistance)
     {

@@ -34,7 +34,7 @@ float3 DirectBRDF (Surface surface, BRDF brdf, Light light)
 // 计算物体表面接收到的光能量总和
 float3 IncomingLight (Surface surface, Light light)
 {
-    return saturate(dot(surface.normal, light.direction)) * light.color;
+    return saturate(dot(surface.normal, light.direction)) * light.color * light.attenuation;
 }
 
 // 返回光照计算结果 即物体表面最终反射的RGB光能量
@@ -44,12 +44,12 @@ float3 GetLighting (Surface surface, BRDF brdf, Light light)
 }
 
 // 返回光照计算结果
-float3 GetLighting (Surface surface, BRDF brdf)
+float3 GetLighting (Surface surfaceWS, BRDF brdf)
 {
     float3 color = 0.0;
     for (int i = 0; i < GetDirectionalLightCount(); i++)
     {
-        color += GetLighting(surface, brdf, GetDirectionalLight(i));
+        color += GetLighting(surfaceWS, brdf, GetDirectionalLight(i, surfaceWS));
     }
     return color;
 }
