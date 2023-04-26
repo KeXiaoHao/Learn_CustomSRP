@@ -1,0 +1,79 @@
+# 这个.gitignore文件应该放在你的Unity项目目录的根目录下
+#
+# 获取最新地址 https://github.com/github/gitignore/blob/master/Unity.gitignore
+#
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Mm]emoryCaptures/
+
+#编辑器布局设置目录
+/[Uu]serSettings/
+
+# 只有当相应的资产也被忽略时，资产元数据才应该被忽略
+!/[Aa]ssets/**/*.meta
+
+# 如果希望忽略资产存储工具插件，则取消这一行的注释
+# /[Aa]ssets/AssetStoreTools*
+
+# 自动生成的Jetbrains Rider插件
+[Aa]ssets/Plugins/Editor/JetBrains*
+
+# Visual Studio缓存目录
+.vs/
+
+# Visual Studio Code缓存目录
+.vscode/
+
+# Gradle缓存目录
+.gradle/
+
+# Rider缓存目录
+.idea/
+
+# 自动生成VS/MD/Consulo解决方案和项目文件
+ExportedObj/
+.consulo/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Unity3D生成元文件
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# Unity3D生成崩溃报告文件
+sysinfo.txt
+
+# Builds
+*.apk
+*.unitypackage
+*.aab
+*.app
+
+# Crashlytics生成的文件
+crashlytics-build.properties
+.vsconfig
+unityProject.vrmanifest
+
+# Packed Addressables
+/[Aa]ssets/[Aa]ddressable[Aa]ssets[Dd]ata/*/*.bin*
+
+# Temporary auto-generated Android Assets
+/[Aa]ssets/[Ss]treamingAssets/aa.meta
+/[Aa]ssets/[Ss]treamingAssets/aa/*
