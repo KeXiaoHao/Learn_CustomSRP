@@ -13,9 +13,15 @@ MonoBehaviour:
   m_Name: Custom RP
   m_EditorClassIdentifier: 
   DynamicBatching: 0
-  GPUInstancing: 1
+  GPUInstancing: 0
   SRPBatches: 0
   shadows:
-    maxDistance: 10
+    maxDistance: 30
+    distanceFade: 0.1
     directional:
       atlasSize: 1024
+      cascadeCount: 4
+      cascadeRatio1: 0.3
+      cascadeRatio2: 0.4
+      cascadeRatio3: 0.5
+      cascadeFade: 0.1

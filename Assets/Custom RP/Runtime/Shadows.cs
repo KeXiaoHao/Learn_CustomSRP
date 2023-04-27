@@ -18,14 +18,22 @@ public class Shadows
     
     private ShadowSettings settings;         //声明阴影设置参数类
 
-    private const int maxShadowedDirectionalLightCount = 4; //定义最大数量的定向光源阴影
+    private const int maxShadowedDirectionalLightCount = 4, //定义最大数量的定向光源阴影
+        maxCascade = 4; //定义最大级数的级联阴影
 
     private int ShaowedDirectionalLightCount; //定向光阴影的数量
 
     private static int dirShadowAtlasId = Shader.PropertyToID("_DirectionalShadowAtlas"), //获取定向光的阴影图集的shader属性
-        dirShadowMatricesId = Shader.PropertyToID("_DirectionalShadowMatrices"); //世界空间下的阴影纹理坐标
+        dirShadowMatricesId = Shader.PropertyToID("_DirectionalShadowMatrices"), //世界空间下的阴影纹理坐标
+        cascadeCountId = Shader.PropertyToID("_CascadeCount"), //级联阴影级数
+        cascadeCullingSpheresId = Shader.PropertyToID("_CascadeCullingSpheres"), //级联阴影剔除球体
+        cascadeDataId = Shader.PropertyToID("_CascadeData"), //级联数据
+        shadowDistanceFadeId = Shader.PropertyToID("_ShadowDistanceFade"); //淡出阴影距离
 
-    private static Matrix4x4[] dirShadowMatrices = new Matrix4x4[maxShadowedDirectionalLightCount];
+    private static Matrix4x4[] dirShadowMatrices = new Matrix4x4[maxShadowedDirectionalLightCount * maxCascade];
+
+    private static Vector4[] cascadeCullingSphere = new Vector4[maxCascade], // xyz 球心位置坐标 z 半径
+            cascadeData = new Vector4[maxCascade]; // 级联数据矢量数组
 
     public void Setup(ScriptableRenderContext context, CullingResults cullingResults, ShadowSettings settings)
     {
@@ -86,7 +94,9 @@ public class Shadows
         buffer.BeginSample(bufferName);
         ExecuteBuffer();
 
-        int split = ShaowedDirectionalLightCount <= 1 ? 1 : 2;
+        // 级联阴影相关参数操作
+        int tiles = ShaowedDirectionalLightCount * settings.directional.cascadeCount;
+        int split = tiles <= 1 ? 1 : tiles <= 4 ? 2 : 4;
         int tileSize = atlasSize / split;
         
         for (int i = 0; i < ShaowedDirectionalLightCount; i++)
@@ -94,7 +104,13 @@ public class Shadows
             RenderDirectionalShadows(i, split, tileSize); //要渲染单个阴影 添加一个方法重载 然后调用 利用循环渲染所有阴影
         }
         
+        buffer.SetGlobalInt(cascadeCountId, settings.directional.cascadeCount); //传递级联阴影级数
+        buffer.SetGlobalVectorArray(cascadeCullingSpheresId, cascadeCullingSphere); //传递级联剔除球体
+        buffer.SetGlobalVectorArray(cascadeDataId, cascadeData); //传递级联数据
         buffer.SetGlobalMatrixArray(dirShadowMatricesId, dirShadowMatrices); //一旦渲染了所有阴影光源 通过缓冲区上调用传递给Shader
+
+        float f = 1f - settings.directional.cascadeFade;
+        buffer.SetGlobalVector(shadowDistanceFadeId, new Vector4(1f / settings.maxDistance, 1f / settings.distanceFade, 1f / (1f - f * f))); //传递淡出阴影距离
         buffer.EndSample(bufferName);
         ExecuteBuffer();
     }
@@ -106,21 +122,41 @@ public class Shadows
         // ShadowDrawingSettings其构造函数 创建正确的配置 其中包含剔除结果和可见光索引
         var shadowSettings = new ShadowDrawingSettings(cullingResults, light.visibleLightIndex);
         
-        // 计算方向光的视图和投影矩阵以及阴影分割数据
-        // 输入 可见光源索引 级联索引 级联数量 级联比率 阴影贴图分辨率 光源的近平面偏移量
-        // 输出 计算出的视图矩阵 计算出的投影矩阵 计算出的级联阴影数据
-        cullingResults.ComputeDirectionalShadowMatricesAndCullingPrimitives(light.visibleLightIndex, 0, 1, Vector3.zero, 
-            tileSize, 0f, 
-            out Matrix4x4 viewMatrix, out Matrix4x4 projMatrix, out ShadowSplitData splitData);
+        // 级联阴影参数
+        int cascadeCount = settings.directional.cascadeCount;
+        int tileOffset = index * cascadeCount; //当前要渲染的第一个tile在shadow atlas中的索引
+        Vector3 ratios = settings.directional.CascadeRatios;
 
-        shadowSettings.splitData = splitData; //级联阴影数据中含有如何剔除阴影投射对象的信息 传递给shadowSettings
+        for (int i = 0; i < cascadeCount; i++)
+        {
+            // 计算方向光的视图和投影矩阵以及阴影分割数据
+            // 输入 可见光源索引 级联索引 级联数量 级联比率 阴影贴图分辨率 光源的近平面偏移量
+            // 输出 计算出的视图矩阵 计算出的投影矩阵 计算出的级联阴影数据
+            cullingResults.ComputeDirectionalShadowMatricesAndCullingPrimitives(light.visibleLightIndex, i, cascadeCount, ratios, 
+                tileSize, light.nearPlaneOffset, 
+                out Matrix4x4 viewMatrix, out Matrix4x4 projMatrix, out ShadowSplitData splitData);
+            
+            shadowSettings.splitData = splitData; //级联阴影数据中含有如何剔除阴影投射对象的信息 传递给shadowSettings
+
+            if (index == 0)
+            {
+                SetCascadeData(i, splitData.cullingSphere, tileSize); //级联阴影有关参数的计算
+            }
+
+            int tileIndex = tileOffset + i; // 当前要渲染的tile区域
   
-        //将光源的阴影投影矩阵和视图矩阵相乘 得到从世界空间到光源空间的转换矩阵
-        dirShadowMatrices[index] = ConvertToAtlasMatrix(projMatrix * viewMatrix, SetTileViewport(index, split, tileSize), split);
+            //将光源的阴影投影矩阵和视图矩阵相乘 得到从世界空间到光源空间的转换矩阵
+            dirShadowMatrices[tileIndex] = ConvertToAtlasMatrix(projMatrix * viewMatrix, SetTileViewport(tileIndex, split, tileSize), split);
         
-        buffer.SetViewProjectionMatrices(viewMatrix, projMatrix); //在缓冲区上调用 来应用视图矩阵和投影矩阵
-        ExecuteBuffer();
-        context.DrawShadows(ref shadowSettings); // 为单个光源调用阴影投射物的绘制
+            buffer.SetViewProjectionMatrices(viewMatrix, projMatrix); //在缓冲区上调用 来应用视图矩阵和投影矩阵
+            
+            buffer.SetGlobalDepthBias(0f, light.slopeScaleBias); //全局深度偏差
+            ExecuteBuffer();
+            context.DrawShadows(ref shadowSettings); // 为单个光源调用阴影投射物的绘制
+            // bias:缩放 GPU 的最小可解析深度缓冲区值以产生恒定的深度偏移
+            // slopBias:缩放最大 Z 斜率（也称为深度坡度）以为每个面生成可变深度偏移
+            buffer.SetGlobalDepthBias(0f, 0f);
+        }
     }
 
     /// <summary>
@@ -158,6 +194,19 @@ public class Shadows
         m.m23 = 0.5f * (m.m23 + m.m33);
         return m;
     }
+
+    /// <summary>
+    /// 设置级联阴影相关数据
+    /// </summary>
+    void SetCascadeData(int index, Vector4 cullingSphere, float tileSize)
+    {
+        float texelSize = 2f * cullingSphere.w / tileSize;
+        // 需要在shader中检测模型是否在剔除球体内 通过比较模型到球体中心的距离平方与球的半径平方
+        // 所以直接在cpu端计算并储存半径平方 省的在shader中去计算了
+        cullingSphere.w *= cullingSphere.w;
+        cascadeCullingSphere[index] = cullingSphere;
+        cascadeData[index] = new Vector4(1f / cullingSphere.w, texelSize * 1.4142136f); //传递剔除球体
+    }
     
     ////////////////////////////////////////// 各光源类型阴影的剔除筛选 /////////////////////////////////////////////////////
 
@@ -167,6 +216,8 @@ public class Shadows
     struct ShadowedDirectionalLight
     {
         public int visibleLightIndex; //可见定向光的索引
+        public float slopeScaleBias;  //阴影斜率偏差
+        public float nearPlaneOffset; //近平面偏移
     }
     
     /// <summary>
@@ -176,9 +227,9 @@ public class Shadows
 
     /// <summary>
     /// 在阴影图集中为光源的阴影贴图保留空间 并存储渲染它们所需的信息
-    /// <example>可见阴影光源的索引 阴影强度 阴影图块索引</example>
+    /// <example>可见阴影光源的索引 阴影强度 偏差 法线偏差 阴影图块索引</example>
     /// </summary>
-    public Vector2 ReserveDirectionalShadow(Light light, int visibleLightIndex)
+    public Vector3 ReserveDirectionalShadow(Light light, int visibleLightIndex)
     {
         // 当前定向光阴影数量 < 最大定向光阴影数量
         // 且 场景内灯光的阴影模式设置不是无 且 灯光的阴影强度不为零
@@ -188,10 +239,11 @@ public class Shadows
             && cullingResults.GetShadowCasterBounds(visibleLightIndex, out Bounds b))
         {
             ShadowedDirectionalLights[ShaowedDirectionalLightCount] = new ShadowedDirectionalLight
-                { visibleLightIndex = visibleLightIndex }; // 存储光源的可见索引并增加计数
-            return new Vector2(light.shadowStrength, ShaowedDirectionalLightCount++);
+                { visibleLightIndex = visibleLightIndex, slopeScaleBias = light.shadowBias, nearPlaneOffset = light.shadowNearPlane}; // 存储光源的可见索引并增加计数
+            
+            return new Vector3(light.shadowStrength, settings.directional.cascadeCount * ShaowedDirectionalLightCount++, light.shadowNormalBias);
         }
 
-        return Vector2.zero;
+        return Vector3.zero;
     }
 }

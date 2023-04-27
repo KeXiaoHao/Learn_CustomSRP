@@ -70,6 +70,7 @@ float4 LitPassFragment(Varyings i) : SV_TARGET
     surface.position = i.positionWS;
     surface.normal = normalize(i.normalWS);
     surface.viewDirection = normalize(_WorldSpaceCameraPos - i.positionWS);
+    surface.depth = -TransformWorldToView(i.positionWS).z;
     surface.color = base.rgb;
     surface.alpha = base.a;
     surface.metallic = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _Metallic);

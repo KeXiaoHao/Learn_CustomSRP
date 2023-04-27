@@ -28,22 +28,25 @@ int GetDirectionalLightCount()
 }
 
 // 获取定向光的阴影数据
-DirectionalShadowData GetDirectionalShadowData (int lightIndex)
+DirectionalShadowData GetDirectionalShadowData (int lightIndex, ShadowData shadowdata)
 {
     DirectionalShadowData data;
-    data.strength = _DirectionalLightShadowData[lightIndex].x;
-    data.tileIndex = _DirectionalLightShadowData[lightIndex].y;
+    data.strength = _DirectionalLightShadowData[lightIndex].x * shadowdata.strength;
+    // 通过将级联索引添加到光源的阴影图集偏移量来选择正确的tile索引
+    data.tileIndex = _DirectionalLightShadowData[lightIndex].y + shadowdata.cascadeIndex;
+    data.normalBias = _DirectionalLightShadowData[lightIndex].z;
     return data;
 }
 
 // 得到平行光的灯光数据
-Light GetDirectionalLight (int index, Surface surfaceWS)
+Light GetDirectionalLight (int index, Surface surfaceWS, ShadowData shadowdata)
 {
     Light light;
     light.color = _DirectionalLightColors[index].rgb;
     light.direction = _DirectionalLightDirections[index].xyz;
-    DirectionalShadowData shadowData = GetDirectionalShadowData(index); //获取定向光的阴影数据
-    light.attenuation = GetDirectionalShadowAttenuation(shadowData, surfaceWS); //计算定向光的阴影
+    DirectionalShadowData dirShadowData = GetDirectionalShadowData(index, shadowdata); //获取定向光的阴影数据
+    light.attenuation = GetDirectionalShadowAttenuation(dirShadowData, shadowdata, surfaceWS); //计算定向光的阴影
+    // light.attenuation = shadowdata.cascadeIndex * 0.25;
     return light;
 }
 
