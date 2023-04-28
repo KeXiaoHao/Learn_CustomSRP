@@ -12,6 +12,7 @@ public class CustomShaderGUI : ShaderGUI
     
     public override void OnGUI(MaterialEditor materialEditor, MaterialProperty[] properties)
     {
+        EditorGUI.BeginChangeCheck(); //开始检查材质是否有修改
         base.OnGUI(materialEditor, properties);
         editor = materialEditor;
         materials = materialEditor.targets;
@@ -26,6 +27,9 @@ public class CustomShaderGUI : ShaderGUI
             FadePreset();
             TransparentPreset();
         }
+
+        if (EditorGUI.EndChangeCheck())
+            SetShadowCasterPass(); //有修改就调用此方法
     }
 
     ///////////////////////////// 设置属性和关键字 //////////////////////////////////
@@ -176,4 +180,37 @@ public class CustomShaderGUI : ShaderGUI
     
     // 创建一个属性方便检查
     private bool HasPremultiplyAlpha => HasProperty("_PremulAlpha");
+    
+    ////////////////////////////// 阴影相关处理 ///////////////////////////
+
+    enum ShadowMode
+    {
+        On, Clip, Dither, Off
+    }
+
+    ShadowMode Shadows
+    {
+        set
+        {
+            if (SetProperty("_Shadows", (float)value))
+            {
+                SetKeyword("_SHADOWS_CLIP", value == ShadowMode.Clip);
+                SetKeyword("_SHADOWS_DITHER", value == ShadowMode.Dither);
+            }
+        }
+    }
+
+    void SetShadowCasterPass()
+    {
+        MaterialProperty shadows = FindProperty("_Shadows", properties, false);
+        // 如果属性不存在或者这个属性有多个不同的值 直接return
+        if (shadows == null || shadows.hasMixedValue)
+            return;
+        // 否则启用或者禁用ShadowCater这个pss 当阴影关闭时 为false 自然就关闭这个pass
+        bool enabled = shadows.floatValue < (float)ShadowMode.Off;
+        foreach (Material m in materials)
+        {
+            m.SetShaderPassEnabled("ShadowCater", enabled);
+        }
+    }
 }

@@ -62,8 +62,12 @@ float4 LitPassFragment(Varyings i) : SV_TARGET
     float4 baseMap = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.baseUV);
     float4 baseColor = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _BaseColor);
     float4 base = baseMap * baseColor;
-    #if defined(_CLIPPING)
-    clip(base.a - UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _Cutoff));
+    
+    #if defined(_SHADOWS_CLIP)
+        clip(base.a - UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _Cutoff));
+    #elif defined(_SHADOWS_DITHER)
+        float dither = InterleavedGradientNoise(i.positionCS.xy, 0);
+        clip(base.a - dither);
     #endif
     
     Surface surface;
@@ -75,6 +79,7 @@ float4 LitPassFragment(Varyings i) : SV_TARGET
     surface.alpha = base.a;
     surface.metallic = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _Metallic);
     surface.smoothness = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _Smoothness);
+    surface.dither = InterleavedGradientNoise(i.positionCS.xy, 0);
 
     #if defined(_PREMULTIPLY_ALPHA)
     BRDF brdf = GetBRDF(surface,true);

@@ -17,11 +17,18 @@ public class ShadowSettings
         _256 = 256, _512 = 512, _1024 = 1024,
         _2048 = 2048, _4096 = 4096, _8192 = 8192
     }
+    
+    public enum FilterMode //阴影贴图过滤模式
+    {
+        PCF2X2, PCF3X3, PCF5X5, PCF7X7
+    }
 
     [System.Serializable]
     public struct Directional //声明结构体 是为了将来会支持其他光源类型 这些光源类型将获得自己的阴影设置
     {
         public TextureSize atlasSize; //阴影贴图大小
+
+        public FilterMode filter; //过滤模式
 
         [Range(1, 4)]
         public int cascadeCount; //级联阴影层数
@@ -32,8 +39,17 @@ public class ShadowSettings
         public Vector3 CascadeRatios => new Vector3(cascadeRatio1, cascadeRatio2, cascadeRatio3); //属性方法get
 
         [Range(0.001f, 1f)]public float cascadeFade;
+        
+        public enum CascadeBlendMode //定向光的级联阴影混合模式
+        {
+            Hard, Soft, Dither
+        }
+
+        public CascadeBlendMode cascadeBlend;
     }
 
-    public Directional directional = new Directional { atlasSize = TextureSize._1024, cascadeCount = 4, cascadeRatio1 = 0.1f, cascadeRatio2 = 0.25f, cascadeRatio3 = 0.5f, cascadeFade = 0.1f};
+    public Directional directional = new Directional { atlasSize = TextureSize._1024, filter = FilterMode.PCF2X2,
+        cascadeCount = 4, cascadeRatio1 = 0.1f, cascadeRatio2 = 0.25f, cascadeRatio3 = 0.5f,
+        cascadeFade = 0.1f, cascadeBlend = Directional.CascadeBlendMode.Hard};
     
 }

@@ -28,12 +28,23 @@ public class Shadows
         cascadeCountId = Shader.PropertyToID("_CascadeCount"), //级联阴影级数
         cascadeCullingSpheresId = Shader.PropertyToID("_CascadeCullingSpheres"), //级联阴影剔除球体
         cascadeDataId = Shader.PropertyToID("_CascadeData"), //级联数据
+        shadowAtlasSizedId = Shader.PropertyToID("_ShadowAtlasSize"), //阴影图集大小
         shadowDistanceFadeId = Shader.PropertyToID("_ShadowDistanceFade"); //淡出阴影距离
 
     private static Matrix4x4[] dirShadowMatrices = new Matrix4x4[maxShadowedDirectionalLightCount * maxCascade];
 
     private static Vector4[] cascadeCullingSphere = new Vector4[maxCascade], // xyz 球心位置坐标 z 半径
             cascadeData = new Vector4[maxCascade]; // 级联数据矢量数组
+
+    private static string[] directionalFilterKeywords =
+        { "_DIRECTIONAL_PCF3", "_DIRECTIONAL_PCF5", "_DIRECTIONAL_PCF7", };  //为过滤模式创建shader变体
+    
+    static string[] cascadeBlendKeywords =
+        { "_CASCADE_BLEND_SOFT", "_CASCADE_BLEND_DITHER" }; //级联阴影混合模式
+    
+    
+    
+    ////////////////////////////////////////// 缓冲区阴影相关流程操作 /////////////////////////////////////////////////////
 
     public void Setup(ScriptableRenderContext context, CullingResults cullingResults, ShadowSettings settings)
     {
@@ -58,9 +69,7 @@ public class Shadows
         buffer.ReleaseTemporaryRT(dirShadowAtlasId);
         ExecuteBuffer();
     }
-    
-    ////////////////////////////////////////// 各光源类型的阴影渲染 /////////////////////////////////////////////////////
-    
+
     /// <summary>
     /// 创建阴影图集并渲染
     /// </summary>
@@ -75,6 +84,8 @@ public class Shadows
             buffer.GetTemporaryRT(dirShadowAtlasId, 1, 1, 32, FilterMode.Bilinear, RenderTextureFormat.Shadowmap);
         }
     }
+    
+    ////////////////////////////////////////// 各光源类型的阴影渲染 /////////////////////////////////////////////////////
 
     /// <summary>
     /// 定向光的阴影渲染
@@ -111,6 +122,9 @@ public class Shadows
 
         float f = 1f - settings.directional.cascadeFade;
         buffer.SetGlobalVector(shadowDistanceFadeId, new Vector4(1f / settings.maxDistance, 1f / settings.distanceFade, 1f / (1f - f * f))); //传递淡出阴影距离
+        SetKerwords(directionalFilterKeywords, (int)settings.directional.filter - 1); //启用或关闭阴影贴图过滤模式的shader关键字
+        SetKerwords(cascadeBlendKeywords, (int)settings.directional.cascadeBlend - 1); //阴影混合模式的关键字传递
+        buffer.SetGlobalVector(shadowAtlasSizedId, new Vector4(atlasSize, 1f / atlasSize)); //传递阴影图集大小
         buffer.EndSample(bufferName);
         ExecuteBuffer();
     }
@@ -127,6 +141,8 @@ public class Shadows
         int tileOffset = index * cascadeCount; //当前要渲染的第一个tile在shadow atlas中的索引
         Vector3 ratios = settings.directional.CascadeRatios;
 
+        float cullingFactor = Mathf.Max(0f, 0.8f - settings.directional.cascadeFade); //剔除因子
+
         for (int i = 0; i < cascadeCount; i++)
         {
             // 计算方向光的视图和投影矩阵以及阴影分割数据
@@ -135,6 +151,10 @@ public class Shadows
             cullingResults.ComputeDirectionalShadowMatricesAndCullingPrimitives(light.visibleLightIndex, i, cascadeCount, ratios, 
                 tileSize, light.nearPlaneOffset, 
                 out Matrix4x4 viewMatrix, out Matrix4x4 projMatrix, out ShadowSplitData splitData);
+
+            //应用于剔除球体半径的乘数 值必须介于0到1范围内 值越大 Unity剔除的对象越多 越小 级联共享的渲染对象越多
+            //如果使用较小值 可在不同级联之间混合 因为这样它们会共享对象
+            splitData.shadowCascadeBlendCullingFactor = 1;
             
             shadowSettings.splitData = splitData; //级联阴影数据中含有如何剔除阴影投射对象的信息 传递给shadowSettings
 
@@ -201,11 +221,27 @@ public class Shadows
     void SetCascadeData(int index, Vector4 cullingSphere, float tileSize)
     {
         float texelSize = 2f * cullingSphere.w / tileSize;
+        float filterSize = texelSize * ((float)settings.directional.filter + 1f); // 增加正态偏置以匹配过滤器大小
         // 需要在shader中检测模型是否在剔除球体内 通过比较模型到球体中心的距离平方与球的半径平方
         // 所以直接在cpu端计算并储存半径平方 省的在shader中去计算了
+        cullingSphere.w -= filterSize; // 将球体的半径减小到滤波器尺寸来避免超出剔除范围
         cullingSphere.w *= cullingSphere.w;
         cascadeCullingSphere[index] = cullingSphere;
-        cascadeData[index] = new Vector4(1f / cullingSphere.w, texelSize * 1.4142136f); //传递剔除球体
+        cascadeData[index] = new Vector4(1f / cullingSphere.w, filterSize * 1.4142136f); //传递剔除球体
+    }
+
+    // 设置过滤模式的关键字
+    void SetKerwords( string[] keywords, int enabledIndex)
+    {
+        for (int i = 0; i < keywords.Length; i++)
+        {
+            if (i == enabledIndex)
+                buffer.EnableShaderKeyword(keywords[i]);
+            else
+            {
+                buffer.DisableShaderKeyword(keywords[i]);
+            }
+        }
     }
     
     ////////////////////////////////////////// 各光源类型阴影的剔除筛选 /////////////////////////////////////////////////////

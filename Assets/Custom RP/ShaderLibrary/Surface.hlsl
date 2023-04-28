@@ -13,6 +13,8 @@ struct Surface
     float alpha;           //透明度
     float metallic;        //金属度
     float smoothness;      //光滑度 平滑度
+
+    float dither;          //抖动值
 };
 
 #endif
