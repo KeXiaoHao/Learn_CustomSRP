@@ -10,14 +10,24 @@ Shader "CustomRP/Lit"
         [KeywordEnum(On, Clip, Dither, Off)] _Shadows ("Shadows", Float) = 0
         _Metallic ("Metallic", range(0, 1)) = 0
         _Smoothness ("Smoothness", range(0, 1)) = 0.5
+        [NoScaleOffset] _EmissionMap("Emission", 2D) = "white" {}
+		[HDR] _EmissionColor("Emission", Color) = (0.0, 0.0, 0.0, 0.0)
         [Toggle(_PREMULTIPLY_ALPHA)] _PremulAlpha ("Premultiply Alpha", Float) = 0
         
         [Enum(UnityEngine.Rendering.BlendMode)]_SrcBlend ("Src Blend", float) = 1
         [Enum(UnityEngine.Rendering.BlendMode)]_DstBlend ("Dst Blend", float) = 0
         [Enum(Off, 0, On, 1)]_ZWrite ("Z Write", float) = 1
+        
+        [HideInInspector] _MainTex("Texture for Lightmap", 2D) = "white" {}
+		[HideInInspector] _Color("Color for Lightmap", Color) = (0.5, 0.5, 0.5, 1.0)
     }
     SubShader
     {
+        HLSLINCLUDE
+        #include "../ShaderLibrary/Common.hlsl"
+        #include "LitInput.hlsl"
+        ENDHLSL
+        
         Pass
         {
             Tags { "LightMode" = "CustomLit"}
@@ -29,7 +39,8 @@ Shader "CustomRP/Lit"
             #pragma target 3.5
             #pragma vertex LitPassVertex
             #pragma fragment LitPassFragment
-            
+
+            #pragma multi_compile _ LIGHTMAP_ON
             #pragma multi_compile_instancing
 
             #pragma shader_feature _RECEIVE_SHADOWS
@@ -58,6 +69,19 @@ Shader "CustomRP/Lit"
             #pragma shader_feature _CLIPPING
             #include "ShadowCasterPass.hlsl"
             ENDHLSL
+        }
+
+        Pass
+        {
+	        Tags { "LightMode" = "Meta" }
+            Cull Off
+
+	        HLSLPROGRAM
+        	#pragma target 3.5
+            #pragma vertex MetaPassVertex
+            #pragma fragment MetaPassFragment
+            #include "MetaPass.hlsl"
+        	ENDHLSL
         }
     }
     CustomEditor "CustomShaderGUI"

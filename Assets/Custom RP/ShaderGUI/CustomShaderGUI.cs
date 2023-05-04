@@ -17,6 +17,8 @@ public class CustomShaderGUI : ShaderGUI
         editor = materialEditor;
         materials = materialEditor.targets;
         this.properties = properties;
+
+        BakedEmission();
         
         EditorGUILayout.Space();
         showPresets = EditorGUILayout.Foldout(showPresets, "Presets", true); //使用折叠
@@ -29,7 +31,10 @@ public class CustomShaderGUI : ShaderGUI
         }
 
         if (EditorGUI.EndChangeCheck())
+        {
             SetShadowCasterPass(); //有修改就调用此方法
+            CopyLightMappingProperties();
+        }
     }
 
     ///////////////////////////// 设置属性和关键字 //////////////////////////////////
@@ -211,6 +216,47 @@ public class CustomShaderGUI : ShaderGUI
         foreach (Material m in materials)
         {
             m.SetShaderPassEnabled("ShadowCater", enabled);
+        }
+    }
+    
+    ////////////////////////////// 烘焙相关处理 ///////////////////////////
+
+    void BakedEmission()
+    {
+        EditorGUI.BeginChangeCheck();
+        
+        // 绘制用于光照贴图自发光属性的UI（无、实时、烘焙）
+        editor.LightmapEmissionProperty();
+
+        if (EditorGUI.EndChangeCheck())
+        {
+            foreach (Material m in editor.targets)
+            {
+                // Unity在烘焙时会积极尝试避免单独的发射通道 如果材质的发射设置为零 则忽略它
+                // 通过在更改自发光模式时禁用所有选定材质属性的默认标志来覆盖此行为
+                m.globalIlluminationFlags &= ~MaterialGlobalIlluminationFlags.EmissiveIsBlack;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 复制光照贴图属性
+    /// </summary>
+    void CopyLightMappingProperties()
+    {
+        MaterialProperty mainTex = FindProperty("_MainTex", properties, false);
+        MaterialProperty baseMap = FindProperty("_BaseMap", properties, false);
+        if (mainTex != null && baseMap != null)
+        {
+            mainTex.textureValue = baseMap.textureValue;
+            mainTex.textureScaleAndOffset = baseMap.textureScaleAndOffset;
+        }
+
+        MaterialProperty color = FindProperty("_Color", properties, false);
+        MaterialProperty baseColor = FindProperty("_BaseColor", properties, false);
+        if (color != null && baseColor != null)
+        {
+            color.colorValue = baseColor.colorValue;
         }
     }
 }

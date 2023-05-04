@@ -2,7 +2,7 @@ Shader "CustomRP/Unlit"
 {
     Properties
     {
-        _BaseMap ("Texture", 2D) = "white" {}
+        [HDR]_BaseMap ("Texture", 2D) = "white" {}
         _Cutoff ("Alpha Cutoff", range(0.0, 1.0)) = 0.5
         [Toggle(_CLIPPING)]_Clipping ("Alpha Clipping", float) = 0
         _BaseColor("Color", Color) = (1.0, 1.0, 1.0, 1.0)
@@ -12,6 +12,11 @@ Shader "CustomRP/Unlit"
     }
     SubShader
     {
+        HLSLINCLUDE
+        #include "../ShaderLibrary/Common.hlsl"
+        #include "UnlitInput.hlsl"
+        ENDHLSL
+        
         Pass
         {
             Blend [_SrcBlend] [_DstBlend]

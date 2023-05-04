@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Custom RP
   m_EditorClassIdentifier: 
   DynamicBatching: 0
-  GPUInstancing: 0
+  GPUInstancing: 1
   SRPBatches: 0
   shadows:
     maxDistance: 30

@@ -91,7 +91,8 @@ public partial class CameraRenderer
         var drawingSettings = new DrawingSettings(unlitShaderTagId, sortingSettings)
         {
             enableDynamicBatching = useDynamicBatching, //配置动态批处理
-            enableInstancing = useGPUInstancing // 配置GPU实例化
+            enableInstancing = useGPUInstancing, // 配置GPU实例化
+            perObjectData = PerObjectData.Lightmaps | PerObjectData.LightProbe | PerObjectData.LightProbeProxyVolume //设置光照贴图和灯光探针和LPPV
         }; // 决定摄像机支持的shader pass 和绘制顺序等的配置
         drawingSettings.SetShaderPassName(1, litShaderTagId); //添加lit shader
         var filteringSettings = new FilteringSettings(RenderQueueRange.opaque); // 决定过滤哪些可见objects的配置 包括支持的RenderQueue等
