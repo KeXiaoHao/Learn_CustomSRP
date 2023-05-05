@@ -40,12 +40,21 @@ SAMPLER_CMP(SHADOW_SAMPLER);
 
 //////////////////////////////////////////// 阴影相关参数 //////////////////////////////////////////////
 
+// 阴影蒙版
+struct ShadowMask
+{
+    bool always;   // 是否始终使用阴影遮罩
+    bool distance; // 是否开启距离阴影遮罩
+    float4 shadows; //烘焙的阴影
+};
+
 // 阴影数据
 struct ShadowData
 {
     int cascadeIndex; //级联索引
     float cascadeBlend; //级联混合
     float strength;   //强度
+    ShadowMask shadowMask; //阴影蒙版
 };
 
 // 计算两向量之间距离的平方
@@ -65,6 +74,11 @@ float FadeShadowStrength (float distance, float sacle, float fade)
 ShadowData GetShadowData (Surface surfaceWS)
 {
     ShadowData data;
+
+    data.shadowMask.always = false;
+    data.shadowMask.distance = false;
+    data.shadowMask.shadows = 1.0;
+    
     data.cascadeBlend = 1.0;
     data.strength = FadeShadowStrength(surfaceWS.depth, _ShadowDistanceFade.x, _ShadowDistanceFade.y);
     int i;
@@ -114,6 +128,7 @@ struct DirectionalShadowData
     float strength; //阴影强度
     int tileIndex;  //阴影索引
     float normalBias; //法线偏差
+    int shadowMaskChannel; // 阴影遮罩的通道
 };
 
 // 采样定向光阴影纹理
@@ -141,15 +156,11 @@ float FilterDirectionalShadow(float3 positionSTS)
     #endif
 }
 
-// 求出定向光的阴影
-float GetDirectionalShadowAttenuation (DirectionalShadowData directional, ShadowData global, Surface surfaceWS)
+//////////////////////////////////////////// 阴影相关计算 //////////////////////////////////////////////
+
+// 计算实时的级联阴影
+float GetCascadedShadow ( DirectionalShadowData directional, ShadowData global, Surface surfaceWS)
 {
-    #if !defined(_RECEIVE_SHADOWS)
-        return 1.0;
-    #endif
-    
-    if (directional.strength <= 0)
-        return 1.0; //当阴影强度为0时 根本不需要计算阴影 直接返回1
     float3 normalBias = surfaceWS.normal * (directional.normalBias * _CascadeData[global.cascadeIndex].y);
     //将世界空间下的位置坐标转换到光源空间下的坐标 并应该法线偏移
     float3 positionSTS = mul(_DirectionalShadowMatrices[directional.tileIndex], float4(surfaceWS.position + normalBias, 1.0)).xyz;
@@ -162,7 +173,73 @@ float GetDirectionalShadowAttenuation (DirectionalShadowData directional, Shadow
         positionSTS = mul(_DirectionalShadowMatrices[directional.tileIndex + 1], float4(surfaceWS.position + normalBias, 1.0)).xyz;
         shadow = lerp(FilterDirectionalShadow(positionSTS), shadow, global.cascadeBlend);
     }
-    return lerp(1.0, shadow, directional.strength); //最终衰减(阴影)的值应该是通过阴影强度来进行插值
+    return shadow;
+}
+
+// 计算阴影蒙版里的烘焙的阴影
+float GetBakedShadow(ShadowMask mask, int channel)
+{
+    float shadow = 1.0;
+    if (mask.always || mask.distance)
+    {
+        if (channel >= 0)
+        shadow = mask.shadows[channel]; //对于不同的光源 利用CPU传过来的索引 使用不同光源下的烘焙阴影贴图的通道 以支持多个光源混合阴影
+    }
+    return shadow;
+}
+// 计算阴影蒙版里的烘焙的阴影 具有强度参数
+float GetBakedShadow(ShadowMask mask, int channel, float strength)
+{
+    if (mask.always || mask.distance)
+        return lerp(1.0, GetBakedShadow(mask, channel), strength);
+    return 1.0;
+}
+
+// 实时阴影和烘焙阴影的混合计算
+float MixBakedAndRealtimeShadows ( ShadowData global, float shadow, int shadowMaskChannel, float strength )
+{
+    float baked = GetBakedShadow(global.shadowMask, shadowMaskChannel);
+
+    if (global.shadowMask.always) //当始终使用阴影遮罩时
+    {
+        shadow = lerp(1.0, shadow, global.strength); // 首先实时阴影必须通过全局强度进行调制 以根据深度使其淡化
+        shadow = min(baked, shadow); // 然后通过最小化来组合烘焙阴影和实时阴影
+        return lerp(1.0, shadow, strength); // 之后光源的阴影强度将应用于合并的阴影
+    }
+    
+    if (global.shadowMask.distance) // 当开启距离阴影遮罩时
+    {
+        shadow = lerp(baked, shadow, global.strength); //用全局阴影的强度来插值烘焙阴影和实时阴影
+        return lerp(1.0, shadow, strength); // 接着再拿定向光的阴影强度来插值
+    }
+    return lerp(1.0, shadow, strength * global.strength); //最终衰减(阴影)的值应该是通过阴影强度来进行插值
+}
+
+
+
+//////////////////////////////////////////// 最终光源的阴影合并 //////////////////////////////////////////////
+
+// 求出定向光的阴影
+float GetDirectionalShadowAttenuation (DirectionalShadowData directional, ShadowData global, Surface surfaceWS)
+{
+    #if !defined(_RECEIVE_SHADOWS)
+        return 1.0;
+    #endif
+
+    float shadow;
+    
+    if (directional.strength * global.strength <= 0.0) //当没有实时阴影存在时
+    {
+        // 当没有实时阴影投射器时以及当我们超出最大阴影距离时 都可以实现烘焙阴影
+        shadow = GetBakedShadow(global.shadowMask, directional.shadowMaskChannel, abs(directional.strength)); //返回1或者烘焙阴影
+    }
+    else
+    {
+        shadow = GetCascadedShadow(directional, global, surfaceWS);
+        shadow = MixBakedAndRealtimeShadows(global, shadow, directional.shadowMaskChannel, directional.strength);
+    }
+    
+    return shadow;
 }
 
 #endif

@@ -41,6 +41,9 @@ public class Shadows
     
     static string[] cascadeBlendKeywords =
         { "_CASCADE_BLEND_SOFT", "_CASCADE_BLEND_DITHER" }; //级联阴影混合模式
+
+    private static string[] shadowMaskKeywords = { "_SHADOW_MASK_ALWAYS", "_SHADOW_MASK_DISTANCE" }; //阴影蒙版
+    private bool useShadowMask; // 是否使用阴影蒙版
     
     
     
@@ -53,6 +56,7 @@ public class Shadows
         this.settings = settings;
 
         ShaowedDirectionalLightCount = 0; //先初始为0
+        useShadowMask = false;
     }
 
     void ExecuteBuffer()
@@ -83,6 +87,11 @@ public class Shadows
             // 因为此类平台纹理和采样器绑定在一起 当加载带有此shader的材质时缺少纹理时 会失败
             buffer.GetTemporaryRT(dirShadowAtlasId, 1, 1, 32, FilterMode.Bilinear, RenderTextureFormat.Shadowmap);
         }
+        
+        buffer.BeginSample(bufferName);
+        SetKerwords(shadowMaskKeywords, useShadowMask ? QualitySettings.shadowmaskMode == ShadowmaskMode.Shadowmask ? 0 : 1 : -1);
+        buffer.EndSample(bufferName);
+        ExecuteBuffer();
     }
     
     ////////////////////////////////////////// 各光源类型的阴影渲染 /////////////////////////////////////////////////////
@@ -230,7 +239,7 @@ public class Shadows
         cascadeData[index] = new Vector4(1f / cullingSphere.w, filterSize * 1.4142136f); //传递剔除球体
     }
 
-    // 设置过滤模式的关键字
+    // 设置关键字
     void SetKerwords( string[] keywords, int enabledIndex)
     {
         for (int i = 0; i < keywords.Length; i++)
@@ -263,23 +272,38 @@ public class Shadows
 
     /// <summary>
     /// 在阴影图集中为光源的阴影贴图保留空间 并存储渲染它们所需的信息
-    /// <example>可见阴影光源的索引 阴影强度 偏差 法线偏差 阴影图块索引</example>
+    /// <example>可见阴影光源的索引 阴影强度 偏差 法线偏差 阴影图块索引 阴影遮罩</example>
     /// </summary>
-    public Vector3 ReserveDirectionalShadow(Light light, int visibleLightIndex)
+    public Vector4 ReserveDirectionalShadow(Light light, int visibleLightIndex)
     {
         // 当前定向光阴影数量 < 最大定向光阴影数量
         // 且 场景内灯光的阴影模式设置不是无 且 灯光的阴影强度不为零
-        // 且 返回封装了可见阴影投射物的包围盒 如果光源影响了场景中至少一个阴影投射对象 则为 true
         if (ShaowedDirectionalLightCount < maxShadowedDirectionalLightCount 
-            && light.shadows != LightShadows.None && light.shadowStrength >0f 
-            && cullingResults.GetShadowCasterBounds(visibleLightIndex, out Bounds b))
+            && light.shadows != LightShadows.None && light.shadowStrength >0f)
         {
+            float maskChannel = -1; // 当光源不使用阴影遮罩时 我们通过将其索引设置为 −1 来指示这一点
+            
+            // LightBakingOutput 描述给定光源的全局光照烘焙结果的结构体
+            LightBakingOutput lightBaking = light.bakingOutput; // 最后一个全局光照烘焙的输出
+            if (lightBaking.lightmapBakeType == LightmapBakeType.Mixed &&
+                lightBaking.mixedLightingMode == MixedLightingMode.Shadowmask)
+            {
+                useShadowMask = true; // 当光源的类型是Mixed 且 光照贴图的混合光照模式为Shadowmask时 开启shadow mask
+                maskChannel = lightBaking.occlusionMaskChannel; // 对于Mixed光源包含要使用的遮挡遮罩通道的索引（如果有） 否则为-1
+            }
+            
+            // 检查是否没有实时阴影投射器 在这种情况下 只有阴影强度是相关的
+            if (!cullingResults.GetShadowCasterBounds(visibleLightIndex, out Bounds b))
+            {
+                return new Vector4(-light.shadowStrength, 0f, 0f, maskChannel); // 当阴影强度大于零时 着色器将对阴影贴图进行采样 通过取反阴影强度来使这项工作
+            }
+            
             ShadowedDirectionalLights[ShaowedDirectionalLightCount] = new ShadowedDirectionalLight
                 { visibleLightIndex = visibleLightIndex, slopeScaleBias = light.shadowBias, nearPlaneOffset = light.shadowNearPlane}; // 存储光源的可见索引并增加计数
             
-            return new Vector3(light.shadowStrength, settings.directional.cascadeCount * ShaowedDirectionalLightCount++, light.shadowNormalBias);
+            return new Vector4(light.shadowStrength, settings.directional.cascadeCount * ShaowedDirectionalLightCount++, light.shadowNormalBias, maskChannel);
         }
 
-        return Vector3.zero;
+        return new Vector4(0f, 0f, 0f, -1f);
     }
 }

@@ -31,10 +31,11 @@ int GetDirectionalLightCount()
 DirectionalShadowData GetDirectionalShadowData (int lightIndex, ShadowData shadowdata)
 {
     DirectionalShadowData data;
-    data.strength = _DirectionalLightShadowData[lightIndex].x * shadowdata.strength;
+    data.strength = _DirectionalLightShadowData[lightIndex].x;
     // 通过将级联索引添加到光源的阴影图集偏移量来选择正确的tile索引
     data.tileIndex = _DirectionalLightShadowData[lightIndex].y + shadowdata.cascadeIndex;
     data.normalBias = _DirectionalLightShadowData[lightIndex].z;
+    data.shadowMaskChannel = _DirectionalLightShadowData[lightIndex].w;
     return data;
 }
 
