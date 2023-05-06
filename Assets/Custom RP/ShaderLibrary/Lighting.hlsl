@@ -29,6 +29,18 @@ float3 DirectBRDF (Surface surface, BRDF brdf, Light light)
     return SpecularStrength(surface, brdf, light) * brdf.specular + brdf.diffuse;
 }
 
+// 计算间接光照 即GI中的漫反射和镜面反射与B R D F的计算
+float3 IndirectBRDF (Surface surface, BRDF brdf, float3 diffuse, float3 specular)
+{
+    float fresnelStrength = Pow4(1.0 - saturate(dot(surface.normal, surface.viewDirection))) * surface.fresnelStrength;
+    
+    float3 reflection = specular * lerp(brdf.specular, brdf.fresnel, fresnelStrength); // 根据fresnel强度在B RDF镜面和菲涅耳颜色之间进行插值
+    // 粗糙会散射这种反射 因此应该减少我们最终看到的镜面反射
+    reflection /= brdf.roughness * brdf.roughness + 1.0; // 低粗糙度值并不重要 而最大粗糙度会使反射减半
+    
+    return diffuse * brdf.diffuse + reflection;
+}
+
 /////////////////////// Lighting Functions /////////////////////////////////////
 
 // 计算物体表面接收到的光能量总和
@@ -48,7 +60,7 @@ float3 GetLighting (Surface surfaceWS, BRDF brdf, GI gi)
 {
     ShadowData shadowData = GetShadowData(surfaceWS);
     shadowData.shadowMask = gi.shadowMask;
-    float3 color = gi.diffuse * brdf.diffuse; //间接光颜色 * 表面的漫反射率
+    float3 color = IndirectBRDF(surfaceWS, brdf, gi.diffuse, gi.specular); //间接光照
     for (int i = 0; i < GetDirectionalLightCount(); i++)
     {
         Light light = GetDirectionalLight(i, surfaceWS, shadowData);

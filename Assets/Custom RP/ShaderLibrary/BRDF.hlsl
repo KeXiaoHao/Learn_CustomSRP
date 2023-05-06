@@ -10,6 +10,8 @@ struct BRDF
     float3 diffuse;     //漫反射颜色
     float3 specular;    //高光颜色 镜面反射颜色
     float roughness;    //粗糙度
+    float perceptualRoughness;   //感知粗糙度 用来计算mipmap
+    float fresnel;      // 菲尼尔参数
 };
 
 //计算Diffuse反射率
@@ -36,8 +38,9 @@ BRDF GetBRDF (Surface surface, bool applyAlphaToDiffuse = false)
 
     // 粗糙度与平滑度相反，因此可以 1.0 - 平滑度 使用内置函数得出感知粗糙度
     // 再通过函数转换为实际粗糙度 也就是对其平方
-    float perceptualRoughness = PerceptualSmoothnessToPerceptualRoughness(surface.smoothness);
-    brdf.roughness = PerceptualRoughnessToRoughness(perceptualRoughness);
+    brdf.perceptualRoughness = PerceptualSmoothnessToPerceptualRoughness(surface.smoothness);
+    brdf.roughness = PerceptualRoughnessToRoughness(brdf.perceptualRoughness);
+    brdf.fresnel = saturate(surface.smoothness + 1.0 - oneMinusReflectivity);
     return brdf;
 }
 

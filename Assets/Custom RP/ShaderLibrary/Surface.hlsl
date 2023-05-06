@@ -13,6 +13,7 @@ struct Surface
     float alpha;           //透明度
     float metallic;        //金属度
     float smoothness;      //光滑度 平滑度
+    float fresnelStrength; // 菲尼尔强度
 
     float dither;          //抖动值
 };

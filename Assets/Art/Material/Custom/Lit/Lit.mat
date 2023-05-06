@@ -39,6 +39,7 @@ Material:
     - _Clipping: 0
     - _Cutoff: 0.5
     - _DstBlend: 0
+    - _Fresnel: 1
     - _Metallic: 0
     - _PremulAlpha: 0
     - _ReceiveShadows: 1

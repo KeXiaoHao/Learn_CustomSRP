@@ -136,6 +136,7 @@ public class CustomShaderGUI : ShaderGUI
             DstBlend = BlendMode.Zero;
             ZWrite = true;
             RenderQueue = RenderQueue.Geometry;
+            Shadows = ShadowMode.On;
         }
     }
 
@@ -149,6 +150,7 @@ public class CustomShaderGUI : ShaderGUI
             DstBlend = BlendMode.Zero;
             ZWrite = true;
             RenderQueue = RenderQueue.AlphaTest;
+            Shadows = ShadowMode.Clip;
         }
     }
 
@@ -162,6 +164,7 @@ public class CustomShaderGUI : ShaderGUI
             DstBlend = BlendMode.OneMinusSrcAlpha;
             ZWrite = false;
             RenderQueue = RenderQueue.Transparent;
+            Shadows = ShadowMode.Off;
         }
     }
 
@@ -175,6 +178,7 @@ public class CustomShaderGUI : ShaderGUI
             DstBlend = BlendMode.OneMinusSrcAlpha;
             ZWrite = false;
             RenderQueue = RenderQueue.Transparent;
+            Shadows = ShadowMode.Off;
         }
     }
     

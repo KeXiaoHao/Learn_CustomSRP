@@ -92,7 +92,7 @@ public partial class CameraRenderer
         {
             enableDynamicBatching = useDynamicBatching, //配置动态批处理
             enableInstancing = useGPUInstancing, // 配置GPU实例化
-            perObjectData = PerObjectData.Lightmaps | PerObjectData.ShadowMask | PerObjectData.LightProbe | PerObjectData.OcclusionProbe | PerObjectData.LightProbeProxyVolume | PerObjectData.OcclusionProbeProxyVolume //设置光照贴图 阴影蒙版 灯光探针 遮挡探针 LPPV LPPV遮挡数据
+            perObjectData = PerObjectData.ReflectionProbes | PerObjectData.Lightmaps | PerObjectData.ShadowMask | PerObjectData.LightProbe | PerObjectData.OcclusionProbe | PerObjectData.LightProbeProxyVolume | PerObjectData.OcclusionProbeProxyVolume //设置反射探针 光照贴图 阴影蒙版 灯光探针 遮挡探针 LPPV LPPV遮挡数据
         }; // 决定摄像机支持的shader pass 和绘制顺序等的配置
         drawingSettings.SetShaderPassName(1, litShaderTagId); //添加lit shader
         var filteringSettings = new FilteringSettings(RenderQueueRange.opaque); // 决定过滤哪些可见objects的配置 包括支持的RenderQueue等

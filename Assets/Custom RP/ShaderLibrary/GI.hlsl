@@ -2,10 +2,13 @@
 #define CUSTOM_GI_INCLUDED
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/EntityLighting.hlsl"
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/ImageBasedLighting.hlsl"
 
 TEXTURE2D(unity_Lightmap); SAMPLER(samplerunity_Lightmap);
 
 TEXTURE2D(unity_ShadowMask); SAMPLER(samplerunity_ShadowMask);
+
+TEXTURECUBE(unity_SpecCube0); SAMPLER(samplerunity_SpecCube0);
 
 // LPPV
 TEXTURE3D_FLOAT(unity_ProbeVolumeSH);
@@ -106,18 +109,32 @@ float3 SampleLightProbe(Surface surfaceWS)
     #endif
 }
 
+// 采样镜面反射环境
+float3 SampleEnvironment (Surface surfaceWS, BRDF brdf)
+{
+    float3 uvw = reflect(-surfaceWS.viewDirection, surfaceWS.normal);
+
+    float mip = PerceptualRoughnessToMipmapLevel(brdf.perceptualRoughness); // 也就是 r * (1.7 - 0.7 * r) * 6
+    
+    float4 environment = SAMPLE_TEXTURECUBE_LOD(unity_SpecCube0, samplerunity_SpecCube0, uvw, mip);
+    
+    return DecodeHDREnvironment(environment, unity_SpecCube0_HDR);
+}
+
 /////////////////////////////////////////// GI 相关处理 /////////////////////////////////////
 
 struct GI
 {
     float3 diffuse;
+    float3 specular;
     ShadowMask shadowMask;
 };
 
-GI GetGI (float2 lightMapUV, Surface surfaceWS)
+GI GetGI (float2 lightMapUV, Surface surfaceWS, BRDF brdf)
 {
     GI gi;
     gi.diffuse = SampleLightMap(lightMapUV) + SampleLightProbe(surfaceWS);
+    gi.specular = SampleEnvironment(surfaceWS, brdf);
     gi.shadowMask.always = false;
     gi.shadowMask.distance = false;
     gi.shadowMask.shadows = 1.0;
