@@ -13,6 +13,7 @@ struct Attributes
     float3 positionOS : POSITION;
     float2 baseUV : TEXCOORD0;
     float3 normalOS : NORMAL;
+    float4 tangentOS : TANGENT;
     GI_ATTRIBUTE_DATA
     UNITY_VERTEX_INPUT_INSTANCE_ID //添加对象索引
 };
@@ -22,7 +23,9 @@ struct Varyings
     float4 positionCS : SV_POSITION;
     float3 positionWS : VAR_POSITION;
     float2 baseUV : VAR_BASE_UV;
+    float2 detailUV : VAR_DETAIL_UV;
     float3 normalWS : VAR_NORMAL;
+    float4 tangentWS : VAR_TANGENT;
     GI_VARYINGS_DATA
     UNITY_VERTEX_INPUT_INSTANCE_ID //接收对象索引
 };
@@ -38,8 +41,10 @@ Varyings LitPassVertex(Attributes input)
     output.positionWS = TransformObjectToWorld(input.positionOS);
     output.positionCS = TransformWorldToHClip(output.positionWS);
     output.normalWS = TransformObjectToWorldNormal(input.normalOS);
+    output.tangentWS = float4(TransformObjectToWorldDir(input.tangentOS.xyz), input.tangentOS.w);
     
     output.baseUV = TransformBaseUV(input.baseUV);
+    output.detailUV = TransformDetailUV(input.baseUV);
     return output;
 }
 
@@ -49,7 +54,7 @@ float4 LitPassFragment(Varyings i) : SV_TARGET
 
     ClipLOD(i.positionCS.xy, unity_LODFade.x); //LOD抖动
     
-    float4 base = GetBase(i.baseUV);
+    float4 base = GetBase(i.baseUV, i.detailUV);
     
     #if defined(_SHADOWS_CLIP)
         clip(base.a - GetCutoff(i.baseUV));
@@ -60,13 +65,14 @@ float4 LitPassFragment(Varyings i) : SV_TARGET
     
     Surface surface;
     surface.position = i.positionWS;
-    surface.normal = normalize(i.normalWS);
+    surface.normal = NormalTangentToWorld(GetNormalTS(i.baseUV), i.normalWS, i.tangentWS);
     surface.viewDirection = normalize(_WorldSpaceCameraPos - i.positionWS);
     surface.depth = -TransformWorldToView(i.positionWS).z;
     surface.color = base.rgb;
     surface.alpha = base.a;
     surface.metallic = GetMetallic(i.baseUV);
-    surface.smoothness = GetSmoothness(i.baseUV);
+    surface.smoothness = GetSmoothness(i.baseUV, i.detailUV);
+    surface.occlusion = GetOcclusion(i.baseUV);
     surface.fresnelStrength = GetFresnel(i.baseUV);
     surface.dither = InterleavedGradientNoise(i.positionCS.xy, 0);
 

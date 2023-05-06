@@ -38,7 +38,7 @@ float3 IndirectBRDF (Surface surface, BRDF brdf, float3 diffuse, float3 specular
     // 粗糙会散射这种反射 因此应该减少我们最终看到的镜面反射
     reflection /= brdf.roughness * brdf.roughness + 1.0; // 低粗糙度值并不重要 而最大粗糙度会使反射减半
     
-    return diffuse * brdf.diffuse + reflection;
+    return (diffuse * brdf.diffuse + reflection) * surface.occlusion;
 }
 
 /////////////////////// Lighting Functions /////////////////////////////////////
