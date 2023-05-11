@@ -42,4 +42,6 @@ float3 NormalTangentToWorld (float3 normalTS, float3 normalWS, float4 tangentWS)
     return TransformTangentToWorld(normalTS, tangentToWorld);
 }
 
+float Square (float v) {return v * v; } // 平方操作 方便多次使用
+
 #endif

@@ -15,6 +15,7 @@ MonoBehaviour:
   DynamicBatching: 0
   GPUInstancing: 0
   SRPBatches: 0
+  useLightsPerObject: 1
   shadows:
     maxDistance: 30
     distanceFade: 0.1
@@ -27,3 +28,6 @@ MonoBehaviour:
       cascadeRatio3: 0.5
       cascadeFade: 0.1
       cascadeBlend: 1
+    other:
+      atlasSize: 1024
+      filter: 0

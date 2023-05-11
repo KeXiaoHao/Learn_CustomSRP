@@ -6,6 +6,7 @@ struct Surface
 {
     float3 position;       //空间坐标
     float3 normal;         //表面法线
+    float3 interpolatedNormal;   // 用于Shadow Bias的插值法线  也就是顶点传过来的NormalWS
     float3 viewDirection;  //观察方向
     float depth;           //观察空间深度值
     

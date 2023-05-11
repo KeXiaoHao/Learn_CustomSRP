@@ -28,8 +28,9 @@ public partial class CameraRenderer
     /// <param name="camera">当前的摄像机</param>
     /// <param name="useDynamicBatching">是否开启动态批处理</param>
     /// <param name="useGPUInstancing">是否开启GPU实例化</param>
-    /// /// <param name="shadowSettings">阴影相关设置</param>
-    public void Render(ScriptableRenderContext context, Camera camera, bool useDynamicBatching, bool useGPUInstancing, ShadowSettings shadowSettings)
+    /// <param name="useLightsPerObject">是否使用每个对象的光源模式</param>
+    /// <param name="shadowSettings">阴影相关设置</param>
+    public void Render(ScriptableRenderContext context, Camera camera, bool useDynamicBatching, bool useGPUInstancing, bool useLightsPerObject, ShadowSettings shadowSettings)
     {
         this.context = context;
         this.camera = camera;
@@ -42,11 +43,11 @@ public partial class CameraRenderer
 
         buffer.BeginSample(SampleName);
         ExecuteBuffer();
-        lighting.Setup(context, cullingResults, shadowSettings); //灯光相关设置 传递数据 渲染阴影等
+        lighting.Setup(context, cullingResults, shadowSettings, useLightsPerObject); //灯光相关设置 传递数据 渲染阴影等
         buffer.EndSample(SampleName);
         
         Setup(); // 初始设置
-        DrawVisibleGeometry(useDynamicBatching, useGPUInstancing); // 绘制可见的几何体
+        DrawVisibleGeometry(useDynamicBatching, useGPUInstancing, useLightsPerObject); // 绘制可见的几何体
         DrawUnsupportedShaders(); // 绘制不支持的shader
         DrawGizmos(); // 绘制编辑器图标
         lighting.Cleanup(); //灯光相关的清理
@@ -83,8 +84,10 @@ public partial class CameraRenderer
 
     }
 
-    void DrawVisibleGeometry(bool useDynamicBatching, bool useGPUInstancing)
+    void DrawVisibleGeometry(bool useDynamicBatching, bool useGPUInstancing, bool useLightsPerObject)
     {
+        PerObjectData lightsPerObjectFlags =
+            useLightsPerObject ? PerObjectData.LightData | PerObjectData.LightIndices : PerObjectData.None; // 是否应使用每个对象的光源模式
         // 考虑透明与不透明物体 正确的渲染顺序应该是 不透明物体 > 天空盒 > 透明物体
         
         var sortingSettings = new SortingSettings(camera) { criteria = SortingCriteria.CommonOpaque }; // 决定物体的绘制顺序 当前：不透明对象的典型排序 即从前往后渲染
@@ -92,7 +95,7 @@ public partial class CameraRenderer
         {
             enableDynamicBatching = useDynamicBatching, //配置动态批处理
             enableInstancing = useGPUInstancing, // 配置GPU实例化
-            perObjectData = PerObjectData.ReflectionProbes | PerObjectData.Lightmaps | PerObjectData.ShadowMask | PerObjectData.LightProbe | PerObjectData.OcclusionProbe | PerObjectData.LightProbeProxyVolume | PerObjectData.OcclusionProbeProxyVolume //设置反射探针 光照贴图 阴影蒙版 灯光探针 遮挡探针 LPPV LPPV遮挡数据
+            perObjectData = PerObjectData.ReflectionProbes | PerObjectData.Lightmaps | PerObjectData.ShadowMask | PerObjectData.LightProbe | PerObjectData.OcclusionProbe | PerObjectData.LightProbeProxyVolume | PerObjectData.OcclusionProbeProxyVolume | lightsPerObjectFlags //设置反射探针 光照贴图 阴影蒙版 灯光探针 遮挡探针 LPPV LPPV遮挡数据
         }; // 决定摄像机支持的shader pass 和绘制顺序等的配置
         drawingSettings.SetShaderPassName(1, litShaderTagId); //添加lit shader
         var filteringSettings = new FilteringSettings(RenderQueueRange.opaque); // 决定过滤哪些可见objects的配置 包括支持的RenderQueue等

@@ -1,6 +1,8 @@
 #ifndef CUSTOM_SHADOW_CASTER_PASS_INCLUDED
 #define CUSTOM_SHADOW_CASTER_PASS_INCLUDED
 
+bool _ShadowPancaking;
+
 struct Attributes
 {
     float3 positionOS : POSITION;
@@ -24,15 +26,17 @@ Varyings ShadowCasterPassVertex(Attributes input)
     float3 positionWS = TransformObjectToWorld(input.positionOS);
     output.positionCS = TransformWorldToHClip(positionWS);
 
-    //防止超过视图范围的模型 其影子在视图中被裁剪 将顶点位置移到近平面
-    #if UNITY_REVERSED_Z
+    if (_ShadowPancaking)
+    {
+        //防止超过视图范围的模型 其影子在视图中被裁剪 将顶点位置移到近平面
+        #if UNITY_REVERSED_Z
             output.positionCS.z = min(output.positionCS.z, output.positionCS.w * UNITY_NEAR_CLIP_VALUE);
-    #else
+        #else
             output.positionCS.z = max(output.positionCS.z, output.positionCS.w * UNITY_NEAR_CLIP_VALUE);
-    #endif
-
-    float4 baseST = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _BaseMap_ST);
-    output.baseUV = input.baseUV * baseST.xy + baseST.zw;
+        #endif
+    }
+    
+    output.baseUV = TransformBaseUV(input.baseUV);
     return output;
 }
 
@@ -40,14 +44,14 @@ void ShadowCasterPassFragment(Varyings i)
 {
     UNITY_SETUP_INSTANCE_ID(i);
 
-    ClipLOD(i.positionCS.xy, unity_LODFade.x);
+    InputConfig config = GetInputConfig(i.baseUV);
 
-    float4 baseMap = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.baseUV);
-    float4 baseColor = UNITY_ACCESS_INSTANCED_PROP(UnityPerMaterial, _BaseColor);
-    float4 base = baseMap * baseColor;
+    ClipLOD(i.positionCS.xy, unity_LODFade.x);
+    
+    float4 base = GetBase(config);
     
     #if defined(_SHADOWS_CLIP)
-        clip(base.a - GetCutoff(i.baseUV));
+        clip(base.a - GetCutoff(config));
     #elif defined(_SHADOWS_DITHER)
         float dither = InterleavedGradientNoise(i.positionCS.xy, 0);
         clip(base.a - dither);

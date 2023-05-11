@@ -8,7 +8,7 @@ using UnityEngine.Rendering;
 public class CustomRenderPipelineAsset : RenderPipelineAsset
 {
     [SerializeField]
-    private bool DynamicBatching = true, GPUInstancing = true, SRPBatches = true;
+    private bool DynamicBatching = true, GPUInstancing = true, SRPBatches = true, useLightsPerObject = true;
 
     [SerializeField]
     private ShadowSettings shadows = default;
@@ -16,6 +16,6 @@ public class CustomRenderPipelineAsset : RenderPipelineAsset
     // 重写创建实际的RenderPipeline函数
     protected override RenderPipeline CreatePipeline()
     {
-        return new CustomRenderPipeline(DynamicBatching, GPUInstancing, SRPBatches, shadows);
+        return new CustomRenderPipeline(DynamicBatching, GPUInstancing, SRPBatches, useLightsPerObject, shadows);
     }
 }

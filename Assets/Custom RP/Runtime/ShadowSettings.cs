@@ -22,6 +22,8 @@ public class ShadowSettings
     {
         PCF2X2, PCF3X3, PCF5X5, PCF7X7
     }
+    
+    ///////////////////////////////////////////////// 定向光 ////////////////////////////////////////////////
 
     [System.Serializable]
     public struct Directional //声明结构体 是为了将来会支持其他光源类型 这些光源类型将获得自己的阴影设置
@@ -52,4 +54,16 @@ public class ShadowSettings
         cascadeCount = 4, cascadeRatio1 = 0.1f, cascadeRatio2 = 0.25f, cascadeRatio3 = 0.5f,
         cascadeFade = 0.1f, cascadeBlend = Directional.CascadeBlendMode.Hard};
     
+    ///////////////////////////////////////////////// 其他光 ////////////////////////////////////////////////
+    
+    [System.Serializable]
+    public struct Other
+    {
+        public TextureSize atlasSize;
+
+        public FilterMode filter;
+    }
+
+    public Other other = new Other { atlasSize = TextureSize._1024, filter = FilterMode.PCF2X2 };
+
 }

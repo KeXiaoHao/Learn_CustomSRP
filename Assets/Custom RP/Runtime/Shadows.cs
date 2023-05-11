@@ -19,31 +19,42 @@ public class Shadows
     private ShadowSettings settings;         //声明阴影设置参数类
 
     private const int maxShadowedDirectionalLightCount = 4, //定义最大数量的定向光源阴影
-        maxCascade = 4; //定义最大级数的级联阴影
+        maxShadowedOtherLightCount = 16; // //定义最大数量的其他光源阴影
+    private const int maxCascade = 4; //定义最大级数的级联阴影
 
-    private int ShaowedDirectionalLightCount; //定向光阴影的数量
+    private int ShaowedDirectionalLightCount, shadowedOtherLightCount; //定向光和其他光阴影的数量
 
     private static int dirShadowAtlasId = Shader.PropertyToID("_DirectionalShadowAtlas"), //获取定向光的阴影图集的shader属性
         dirShadowMatricesId = Shader.PropertyToID("_DirectionalShadowMatrices"), //世界空间下的阴影纹理坐标
+        otherShadowAtlasId = Shader.PropertyToID("_OtherShadowAtlas"),                    //获取其他光的阴影图集的shader属性
+        otherShadowMatricesId = Shader.PropertyToID("_OtherShadowMatrices"),              //其他光阴影的世界空间下的阴影纹理坐标
+        otherShadowTilesId = Shader.PropertyToID("_OtherShadowTiles"),
         cascadeCountId = Shader.PropertyToID("_CascadeCount"), //级联阴影级数
         cascadeCullingSpheresId = Shader.PropertyToID("_CascadeCullingSpheres"), //级联阴影剔除球体
         cascadeDataId = Shader.PropertyToID("_CascadeData"), //级联数据
         shadowAtlasSizedId = Shader.PropertyToID("_ShadowAtlasSize"), //阴影图集大小
-        shadowDistanceFadeId = Shader.PropertyToID("_ShadowDistanceFade"); //淡出阴影距离
+        shadowDistanceFadeId = Shader.PropertyToID("_ShadowDistanceFade"), //淡出阴影距离
+        shadowPancakingId = Shader.PropertyToID("_ShadowPancaking"); 
 
-    private static Matrix4x4[] dirShadowMatrices = new Matrix4x4[maxShadowedDirectionalLightCount * maxCascade];
+    private static Matrix4x4[] dirShadowMatrices = new Matrix4x4[maxShadowedDirectionalLightCount * maxCascade],
+        otherShadowMatrices = new Matrix4x4[maxShadowedOtherLightCount];
 
     private static Vector4[] cascadeCullingSphere = new Vector4[maxCascade], // xyz 球心位置坐标 z 半径
-            cascadeData = new Vector4[maxCascade]; // 级联数据矢量数组
+            cascadeData = new Vector4[maxCascade], // 级联数据矢量数组
+            otherShadowTiles = new Vector4[maxShadowedOtherLightCount]; 
 
     private static string[] directionalFilterKeywords =
         { "_DIRECTIONAL_PCF3", "_DIRECTIONAL_PCF5", "_DIRECTIONAL_PCF7", };  //为过滤模式创建shader变体
+    static string[] otherFilterKeywords =
+        { "_OTHER_PCF3", "_OTHER_PCF5", "_OTHER_PCF7", };
     
     static string[] cascadeBlendKeywords =
         { "_CASCADE_BLEND_SOFT", "_CASCADE_BLEND_DITHER" }; //级联阴影混合模式
 
     private static string[] shadowMaskKeywords = { "_SHADOW_MASK_ALWAYS", "_SHADOW_MASK_DISTANCE" }; //阴影蒙版
     private bool useShadowMask; // 是否使用阴影蒙版
+    
+    Vector4 atlasSizes;
     
     
     
@@ -55,7 +66,7 @@ public class Shadows
         this.cullingResults = cullingResults;
         this.settings = settings;
 
-        ShaowedDirectionalLightCount = 0; //先初始为0
+        ShaowedDirectionalLightCount = shadowedOtherLightCount = 0; //先初始为0
         useShadowMask = false;
     }
 
@@ -71,6 +82,8 @@ public class Shadows
     public void Cleanup()
     {
         buffer.ReleaseTemporaryRT(dirShadowAtlasId);
+        if (shadowedOtherLightCount > 0)
+            buffer.ReleaseTemporaryRT(otherShadowAtlasId);
         ExecuteBuffer();
     }
 
@@ -88,8 +101,22 @@ public class Shadows
             buffer.GetTemporaryRT(dirShadowAtlasId, 1, 1, 32, FilterMode.Bilinear, RenderTextureFormat.Shadowmap);
         }
         
+        if (shadowedOtherLightCount > 0) 
+            RenderOtherShadows();
+        else
+        {
+            buffer.SetGlobalTexture(otherShadowAtlasId, dirShadowAtlasId);
+        }
+        
         buffer.BeginSample(bufferName);
         SetKerwords(shadowMaskKeywords, useShadowMask ? QualitySettings.shadowmaskMode == ShadowmaskMode.Shadowmask ? 0 : 1 : -1);
+        
+        buffer.SetGlobalInt(cascadeCountId, ShaowedDirectionalLightCount > 0 ? settings.directional.cascadeCount : 0); //传递级联阴影级数
+        
+        float f = 1f - settings.directional.cascadeFade;
+        buffer.SetGlobalVector(shadowDistanceFadeId, new Vector4(1f / settings.maxDistance, 1f / settings.distanceFade, 1f / (1f - f * f))); //传递淡出阴影距离
+        
+        buffer.SetGlobalVector(shadowAtlasSizedId, atlasSizes);
         buffer.EndSample(bufferName);
         ExecuteBuffer();
     }
@@ -101,7 +128,10 @@ public class Shadows
     /// </summary>
     void RenderDirectionalShadows()
     {
+        //在GPU上申请一张RT来存放Depth Map
         int atlasSize = (int)settings.directional.atlasSize;
+        atlasSizes.x = atlasSize;
+        atlasSizes.y = 1f / atlasSize;
         // GetTemporaryRT 获取临时渲染纹理 Shader属性id 宽 高 深度缓冲区的位数 过滤模式 纹理类型
         buffer.GetTemporaryRT(dirShadowAtlasId, atlasSize, atlasSize, 32, FilterMode.Bilinear, RenderTextureFormat.Shadowmap);
         // 指示GPU渲染到此纹理而不是相机的目标
@@ -111,6 +141,7 @@ public class Shadows
         
         buffer.ClearRenderTarget(true, false, Color.clear);
         
+        buffer.SetGlobalFloat(shadowPancakingId, 1f);
         buffer.BeginSample(bufferName);
         ExecuteBuffer();
 
@@ -124,16 +155,13 @@ public class Shadows
             RenderDirectionalShadows(i, split, tileSize); //要渲染单个阴影 添加一个方法重载 然后调用 利用循环渲染所有阴影
         }
         
-        buffer.SetGlobalInt(cascadeCountId, settings.directional.cascadeCount); //传递级联阴影级数
         buffer.SetGlobalVectorArray(cascadeCullingSpheresId, cascadeCullingSphere); //传递级联剔除球体
         buffer.SetGlobalVectorArray(cascadeDataId, cascadeData); //传递级联数据
         buffer.SetGlobalMatrixArray(dirShadowMatricesId, dirShadowMatrices); //一旦渲染了所有阴影光源 通过缓冲区上调用传递给Shader
-
-        float f = 1f - settings.directional.cascadeFade;
-        buffer.SetGlobalVector(shadowDistanceFadeId, new Vector4(1f / settings.maxDistance, 1f / settings.distanceFade, 1f / (1f - f * f))); //传递淡出阴影距离
+        
         SetKerwords(directionalFilterKeywords, (int)settings.directional.filter - 1); //启用或关闭阴影贴图过滤模式的shader关键字
         SetKerwords(cascadeBlendKeywords, (int)settings.directional.cascadeBlend - 1); //阴影混合模式的关键字传递
-        buffer.SetGlobalVector(shadowAtlasSizedId, new Vector4(atlasSize, 1f / atlasSize)); //传递阴影图集大小
+        // buffer.SetGlobalVector(shadowAtlasSizedId, new Vector4(atlasSize, 1f / atlasSize)); //传递阴影图集大小
         buffer.EndSample(bufferName);
         ExecuteBuffer();
     }
@@ -151,6 +179,8 @@ public class Shadows
         Vector3 ratios = settings.directional.CascadeRatios;
 
         float cullingFactor = Mathf.Max(0f, 0.8f - settings.directional.cascadeFade); //剔除因子
+        
+        float tileScale = 1f / split;
 
         for (int i = 0; i < cascadeCount; i++)
         {
@@ -163,7 +193,7 @@ public class Shadows
 
             //应用于剔除球体半径的乘数 值必须介于0到1范围内 值越大 Unity剔除的对象越多 越小 级联共享的渲染对象越多
             //如果使用较小值 可在不同级联之间混合 因为这样它们会共享对象
-            splitData.shadowCascadeBlendCullingFactor = 1;
+            splitData.shadowCascadeBlendCullingFactor = cullingFactor;
             
             shadowSettings.splitData = splitData; //级联阴影数据中含有如何剔除阴影投射对象的信息 传递给shadowSettings
 
@@ -175,7 +205,7 @@ public class Shadows
             int tileIndex = tileOffset + i; // 当前要渲染的tile区域
   
             //将光源的阴影投影矩阵和视图矩阵相乘 得到从世界空间到光源空间的转换矩阵
-            dirShadowMatrices[tileIndex] = ConvertToAtlasMatrix(projMatrix * viewMatrix, SetTileViewport(tileIndex, split, tileSize), split);
+            dirShadowMatrices[tileIndex] = ConvertToAtlasMatrix(projMatrix * viewMatrix, SetTileViewport(tileIndex, split, tileSize), tileScale);
         
             buffer.SetViewProjectionMatrices(viewMatrix, projMatrix); //在缓冲区上调用 来应用视图矩阵和投影矩阵
             
@@ -187,9 +217,143 @@ public class Shadows
             buffer.SetGlobalDepthBias(0f, 0f);
         }
     }
+    
+    /// <summary>
+    /// 其他光的阴影渲染
+    /// </summary>
+    void RenderOtherShadows()
+    {
+        int atlasSize = (int)settings.other.atlasSize;
+        atlasSizes.z = atlasSize;
+        atlasSizes.w = 1f / atlasSize;
+        // GetTemporaryRT 获取临时渲染纹理 Shader属性id 宽 高 深度缓冲区的位数 过滤模式 纹理类型
+        buffer.GetTemporaryRT(otherShadowAtlasId, atlasSize, atlasSize, 32, FilterMode.Bilinear, RenderTextureFormat.Shadowmap);
+        // 指示GPU渲染到此纹理而不是相机的目标
+        // RenderBufferLoadAction.DontCare 指示GPU不考虑该RenderBuffer的现有内容 意味着不需要将RenderBuffer内容加载到区块内存中 从而实现性能提升
+        // RenderBufferStoreAction.Store   需要存储到 RAM 中的 RenderBuffer 内容
+        buffer.SetRenderTarget(otherShadowAtlasId, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
+        
+        buffer.ClearRenderTarget(true, false, Color.clear);
+        
+        buffer.SetGlobalFloat(shadowPancakingId, 0f);
+        buffer.BeginSample(bufferName);
+        ExecuteBuffer();
+
+        // 级联阴影相关参数操作
+        int tiles = shadowedOtherLightCount;
+        int split = tiles <= 1 ? 1 : tiles <= 4 ? 2 : 4; //根据光源数量来决定将阴影贴图划分几次
+        int tileSize = atlasSize / split;
+        
+        for (int i = 0; i < shadowedOtherLightCount;)
+        {
+            if (shadowedOtherLights[i].isPoint)
+            {
+                RenderPointShadows(i, split, tileSize);
+                i += 6; //每个点光源需要6个tile
+            }
+            else
+            {
+                RenderSpotShadows(i, split, tileSize);
+                i += 1;
+            }
+        }
+        
+        buffer.SetGlobalMatrixArray(otherShadowMatricesId, otherShadowMatrices); //一旦渲染了所有阴影光源 通过缓冲区上调用传递给Shader
+        buffer.SetGlobalVectorArray(otherShadowTilesId, otherShadowTiles);
+        
+        SetKerwords(otherFilterKeywords, (int)settings.other.filter - 1); //启用或关闭阴影贴图过滤模式的shader关键字
+        buffer.EndSample(bufferName);
+        ExecuteBuffer();
+    }
+
+    /// <summary>
+    /// 渲染点光源的阴影
+    /// </summary>
+    void RenderPointShadows(int index, int split, int tileSize)
+    {
+        ShadowedOtherLight light = shadowedOtherLights[index];
+        var shadowSettings = new ShadowDrawingSettings(cullingResults, light.visibleLightIndex);
+        
+        float texelSize = 2f / tileSize;
+        float filterSize = texelSize * ((float)settings.other.filter + 1f);
+        float bias = light.normalBias * filterSize * 1.4142136f;
+        float tileScale = 1f / split;
+        
+        //增加点光源阴影渲染时透视投影矩阵的fov值 使得距离光源1m处的tile的世界空间大小大于2
+        float fovBias = Mathf.Atan(1f + bias + filterSize) * Mathf.Rad2Deg * 2f - 90f;
+        for (int i = 0; i < 6; i++)
+        {
+            cullingResults.ComputePointShadowMatricesAndCullingPrimitives(light.visibleLightIndex, (CubemapFace)i, fovBias,
+                out Matrix4x4 viewMatrix, out Matrix4x4 projectionMatrix, out ShadowSplitData splitData);
+            // 发生这种情况是因为Unity为点光源渲染阴影的方式。它将它们上下颠倒，从而颠倒了三角形的缠绕顺序。
+            // 通常，从光的角度绘制正面，但是现在可以绘制背面。这可以防止大多数粉刺，但会引起漏光。
+            // 我们不能阻止翻转，但是可以通过对从ComputePointShadowMatricesAndCullingPrimitives中获得的视图矩阵进行取反来撤消翻转。
+            // 让我们取反它的第二行。这第二次将图集中的所有内容颠倒过来，从而使所有内容恢复正常。因为该行的第一个成分始终为零，所以我们只需将其他三个成分取反即可。
+            viewMatrix.m11 = -viewMatrix.m11;
+            viewMatrix.m12 = -viewMatrix.m12;
+            viewMatrix.m13 = -viewMatrix.m13;
+            shadowSettings.splitData = splitData;
+            int tileIndex = index + i; //每个点光源的阴影需要6张tile
+           
+            Vector2 offset = SetTileViewport(tileIndex, split, tileSize);
+            
+            SetOtherTileData(tileIndex, offset, tileScale, bias);
+            otherShadowMatrices[tileIndex] = ConvertToAtlasMatrix(projectionMatrix * viewMatrix, offset, tileScale);
+
+            buffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
+            buffer.SetGlobalDepthBias(0f, light.slopeScaleBias);
+            ExecuteBuffer();
+            context.DrawShadows(ref shadowSettings);
+            buffer.SetGlobalDepthBias(0f, 0f);
+        }
+    }
+    
+    /// <summary>
+    /// 渲染聚光源的阴影
+    /// </summary>
+    void RenderSpotShadows(int index, int split, int tileSize)
+    {
+        ShadowedOtherLight light = shadowedOtherLights[index];
+        var shadowSettings = new ShadowDrawingSettings(cullingResults, light.visibleLightIndex);
+        cullingResults.ComputeSpotShadowMatricesAndCullingPrimitives(light.visibleLightIndex, out Matrix4x4 viewMatrix,
+            out Matrix4x4 projectionMatrix, out ShadowSplitData splitData);
+        shadowSettings.splitData = splitData;
+        
+        //在聚光灯光源位置使用透视投影渲染场景深度
+        //聚光灯使用透视投影来渲染shadowmap
+        //使用normal bias处理shadow acne
+        float texelSize = 2f / (tileSize * projectionMatrix.m00);
+        float filterSize = texelSize * ((float)settings.other.filter + 1f);
+        float bias = light.normalBias * filterSize * 1.4142136f;
+        Vector2 offset = SetTileViewport(index, split, tileSize);
+        float tileScale = 1f / split;
+        SetOtherTileData(index, offset, tileScale, bias);
+        otherShadowMatrices[index] = ConvertToAtlasMatrix(projectionMatrix * viewMatrix, offset, tileScale);
+        
+        buffer.SetViewProjectionMatrices(viewMatrix, projectionMatrix);
+        buffer.SetGlobalDepthBias(0f, light.slopeScaleBias);
+        ExecuteBuffer();
+        context.DrawShadows(ref shadowSettings);
+        buffer.SetGlobalDepthBias(0f, 0f);
+    }
+
+    /// <summary>
+    /// 索引和偏差
+    /// </summary>
+    void SetOtherTileData(int index, Vector2 offset, float scale, float bias)
+    {
+        float border = atlasSizes.w * 0.5f;
+        Vector4 data;
+        data.x = offset.x * scale + border;
+        data.y = offset.y * scale + border;
+        data.z = scale - border - border;
+        data.w = bias;
+        otherShadowTiles[index] = data;
+    }
 
     /// <summary>
     /// 分割渲染视口 让每个光源提供自己的图块来渲染 防止各光源重叠在一个图块上
+    /// 指定在当前绑定的FrameBuffer上的某个矩形区域内渲染
     /// </summary>
     Vector2 SetTileViewport(int index, int split, float tileSize)
     {
@@ -198,7 +362,7 @@ public class Shadows
         return offset;
     }
 
-    Matrix4x4 ConvertToAtlasMatrix(Matrix4x4 m, Vector2 offset, int split)
+    Matrix4x4 ConvertToAtlasMatrix(Matrix4x4 m, Vector2 offset, float scale)
     {
         if (SystemInfo.usesReversedZBuffer) //使用反向的 Z 缓冲区，则反向z的值
         {
@@ -208,7 +372,6 @@ public class Shadows
             m.m23 = -m.m23;
         }
         // 由于裁剪空间的范围是-1到1 而纹理坐标和深度的范围是0到1 所以将xyz缩放偏移一般 再对xy应用视口偏移
-        float scale = 1f / split;
         m.m00 = (0.5f * (m.m00 + m.m30) + offset.x * m.m30) * scale;
         m.m01 = (0.5f * (m.m01 + m.m31) + offset.x * m.m31) * scale;
         m.m02 = (0.5f * (m.m02 + m.m32) + offset.x * m.m32) * scale;
@@ -305,5 +468,60 @@ public class Shadows
         }
 
         return new Vector4(0f, 0f, 0f, -1f);
+    }
+
+    /// <summary>
+    /// 其他光阴影的相关数据
+    /// </summary>
+    struct ShadowedOtherLight
+    {
+        public int visibleLightIndex;  //可见其他光的索引
+        public float slopeScaleBias;   //阴影斜率偏差
+        public float normalBias;       //近平面偏移
+        public bool isPoint;           //是否有点光源
+    }
+
+    /// <summary>
+    /// 目前通过函数得到已存储的可见光阴影的索引
+    /// </summary>
+    ShadowedOtherLight[] shadowedOtherLights = new ShadowedOtherLight[maxShadowedOtherLightCount];
+    
+    /// <summary>
+    /// 在阴影图集中为其他光源的阴影贴图保留空间 并存储渲染它们所需的信息
+    /// <example>可见阴影光源的索引 阴影强度 偏差 法线偏差 阴影图块索引 阴影遮罩</example>
+    /// </summary>
+    public Vector4 ReserveOtherShadows(Light light, int visibleLightIndex)
+    {
+        if (light.shadows == LightShadows.None || light.shadowStrength <= 0f)
+        {
+            return new Vector4(0f, 0f,0f, -1f);
+        }
+        
+        float maskChannel = -1f;
+        LightBakingOutput lightBaking = light.bakingOutput;
+        
+        if (lightBaking.lightmapBakeType == LightmapBakeType.Mixed && lightBaking.mixedLightingMode == MixedLightingMode.Shadowmask)
+        {
+            useShadowMask = true;
+            maskChannel = lightBaking.occlusionMaskChannel;
+        }
+        
+        bool isPoint = light.type == LightType.Point;
+        int newLightCount = shadowedOtherLightCount + (isPoint ? 6 : 1);
+        
+        // 检查增加的光源计数是否会超过最大值 或者是否没有要渲染此光源的阴影
+        // 如果是这样 则返回负阴影强度和遮罩通道
+        // 否则 继续递增光源计数并设置tile的索引
+        if (newLightCount >= maxShadowedOtherLightCount || !cullingResults.GetShadowCasterBounds(visibleLightIndex, out Bounds b))
+        {
+            return new Vector4(-light.shadowStrength, 0f, 0f, maskChannel);
+        }
+        
+        shadowedOtherLights[shadowedOtherLightCount] = new ShadowedOtherLight { visibleLightIndex = visibleLightIndex,
+            slopeScaleBias = light.shadowBias, normalBias = light.shadowNormalBias, isPoint = isPoint};
+
+        Vector4 data = new Vector4(light.shadowStrength, shadowedOtherLightCount, isPoint ? 1f : 0f, maskChannel);
+        shadowedOtherLightCount = newLightCount;
+        return data;
     }
 }

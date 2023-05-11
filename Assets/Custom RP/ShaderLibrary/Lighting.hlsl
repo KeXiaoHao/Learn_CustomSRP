@@ -3,8 +3,6 @@
 
 /////////////////////// B R D F Functions /////////////////////////////////////
 
-float Square (float v) {return v * v; } // 平方操作 方便多次使用
-
 // 计算高光强度 镜面发射强度
 float SpecularStrength (Surface surface, BRDF brdf, Light light)
 {
@@ -61,11 +59,31 @@ float3 GetLighting (Surface surfaceWS, BRDF brdf, GI gi)
     ShadowData shadowData = GetShadowData(surfaceWS);
     shadowData.shadowMask = gi.shadowMask;
     float3 color = IndirectBRDF(surfaceWS, brdf, gi.diffuse, gi.specular); //间接光照
+
+    // 定向光源的叠加
     for (int i = 0; i < GetDirectionalLightCount(); i++)
     {
         Light light = GetDirectionalLight(i, surfaceWS, shadowData);
         color += GetLighting(surfaceWS, brdf, light);
     }
+
+    // 其他光源的叠加
+    #if defined(_LIGHTS_PER_OBJECT)
+        for (int j = 0; j < min(unity_LightData.y, 8); j++)
+        {
+            int lightIndex = unity_LightIndices[(uint)j / 4][(uint)j % 4];
+            Light light = GetOtherLight(lightIndex, surfaceWS, shadowData);
+            color += GetLighting(surfaceWS, brdf, light);
+            // return light.attenuation;
+        }
+    #else
+        for (int j = 0; j < GetOtherLightCount(); j++)
+        {
+            Light otherLight = GetOtherLight(j, surfaceWS, shadowData);
+            color += GetLighting(surfaceWS, brdf, otherLight);
+        }
+    #endif
+    
     return color;
 }
 

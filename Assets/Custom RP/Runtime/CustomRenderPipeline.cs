@@ -4,21 +4,23 @@ using UnityEngine.Rendering;
 /// <summary>
 /// 自定义SRP渲染管线
 /// </summary>
-public class CustomRenderPipeline : RenderPipeline
+public partial class CustomRenderPipeline : RenderPipeline
 {
     private CameraRenderer renderer = new CameraRenderer();
 
-    private bool useDynamicBatching, useGPUInstancing;
+    private bool useDynamicBatching, useGPUInstancing, useLightsPerObject;
 
     private ShadowSettings shadowSettings; //阴影设置
 
-    public CustomRenderPipeline(bool useDynamicBatching, bool useGPUInstancing, bool useSRPBatches, ShadowSettings shadowSettings) //构造函数
+    public CustomRenderPipeline(bool useDynamicBatching, bool useGPUInstancing, bool useSRPBatches, bool useLightsPerObject, ShadowSettings shadowSettings) //构造函数
     {
         this.useDynamicBatching = useDynamicBatching;
         this.useGPUInstancing = useGPUInstancing;
+        this.useLightsPerObject = useLightsPerObject;
         GraphicsSettings.useScriptableRenderPipelineBatching = useSRPBatches; // 开启SRP Batch
         GraphicsSettings.lightsUseLinearIntensity = true; //light强度乘以线性颜色值
         this.shadowSettings = shadowSettings; //阴影相关设置
+        InitializeForEditor();
     }
 
     // 必须重写Render函数
@@ -27,7 +29,7 @@ public class CustomRenderPipeline : RenderPipeline
         // 循环渲染所有的摄像机
         foreach (var camera in cameras)
         {
-            renderer.Render(context, camera, useDynamicBatching, useGPUInstancing, shadowSettings);
+            renderer.Render(context, camera, useDynamicBatching, useGPUInstancing, useLightsPerObject, shadowSettings);
         }
     }
 }
