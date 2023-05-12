@@ -99,6 +99,7 @@ public partial class PostFXStack
             return;
         }
         
+        // 亮度阈值曲线计算参数
         Vector4 threshold;
         threshold.x = Mathf.GammaToLinearSpace(bloom.threshold);
         threshold.y = threshold.x * bloom.thresholdKnee;
@@ -108,10 +109,14 @@ public partial class PostFXStack
         buffer.SetGlobalVector(bloomThresholdId, threshold);
         
         RenderTextureFormat format = RenderTextureFormat.Default;
+        
+        // 预过滤 以一半分辨率作为起点进行bloom的金字塔
         buffer.GetTemporaryRT(bloomPrefilterId, width, height, 0, FilterMode.Bilinear, format);
+        //预先进行一次降采样 降低bloom的消耗
         Draw(sourceId, bloomPrefilterId, Pass.BloomPrefilter);
         width /= 2;
         height /= 2;
+        
         int fromId = bloomPrefilterId, toId = bloomPyramidId + 1;
         
         int i;
@@ -134,7 +139,7 @@ public partial class PostFXStack
         }
         buffer.ReleaseTemporaryRT(bloomPrefilterId);
 
-        buffer.SetGlobalFloat(bloomBucibicUpsamplingId, bloom.bicubicUpsampling ? 1f : 0f); //是否需要双三次滤波
+        buffer.SetGlobalFloat(bloomBucibicUpsamplingId, bloom.bicubicUpsampling ? 1f : 0f); //是否需要三线性过滤
         buffer.SetGlobalFloat(bloomIntensityId, 1f);
         
         if (i > 1)
@@ -151,9 +156,6 @@ public partial class PostFXStack
                 fromId = toId;
                 toId -= 2;
             }
-            buffer.SetGlobalTexture(fxSource2Id, sourceId);
-            Draw(fromId, BuiltinRenderTextureType.CameraTarget, Pass.BloomCombine);
-            buffer.ReleaseTemporaryRT(fromId);
         }
         else //当迭代次数只有一次时 应该直接跳过剩个采样阶段 所以只需要释放用于第一次水平通道的纹理
         {
@@ -161,6 +163,10 @@ public partial class PostFXStack
         }
         
         buffer.SetGlobalFloat(bloomIntensityId, bloom.intensity);
+        
+        buffer.SetGlobalTexture(fxSource2Id, sourceId);
+        Draw(fromId, BuiltinRenderTextureType.CameraTarget, Pass.BloomCombine);
+        buffer.ReleaseTemporaryRT(fromId);
         
         buffer.EndSample("Bloom");
     }

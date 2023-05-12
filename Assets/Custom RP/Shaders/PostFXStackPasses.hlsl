@@ -9,7 +9,7 @@ SAMPLER(sampler_linear_clamp);
 
 float4 _PostFXSource_TexelSize; // x = 1/width y = 1/height
 
-bool _BloomBicubicUpsampling; //是否需要双三次滤波
+bool _BloomBicubicUpsampling; //是否需要三线性过滤
 
 float4 _BloomThreshold;  //Bloom阈值
 

@@ -30,7 +30,7 @@ public class PostFXSettings : ScriptableObject
         
         [Min(1f)]public int downscaleLimit; //最低的降采样像素
         
-        public bool bicubicUpsampling;      //是否需要双三次滤波
+        public bool bicubicUpsampling;      //是否需要三线性过滤
         
         [Min(0f)] public float threshold;   //阈值
 
