@@ -21,6 +21,9 @@ public partial class CameraRenderer
 
     private Lighting lighting = new Lighting(); //声明lighting来获取灯光数据
 
+    private PostFXStack postFXStack = new PostFXStack(); //声明一个后处理栈来调用
+    private static int frameBufferId = Shader.PropertyToID("_CameraFrameBuffer");
+
     /// <summary>
     /// 摄像机渲染器的渲染函数 在当前渲染context的基础上渲染当前摄像机
     /// </summary>
@@ -30,7 +33,7 @@ public partial class CameraRenderer
     /// <param name="useGPUInstancing">是否开启GPU实例化</param>
     /// <param name="useLightsPerObject">是否使用每个对象的光源模式</param>
     /// <param name="shadowSettings">阴影相关设置</param>
-    public void Render(ScriptableRenderContext context, Camera camera, bool useDynamicBatching, bool useGPUInstancing, bool useLightsPerObject, ShadowSettings shadowSettings)
+    public void Render(ScriptableRenderContext context, Camera camera, bool useDynamicBatching, bool useGPUInstancing, bool useLightsPerObject, ShadowSettings shadowSettings, PostFXSettings postFXSettings)
     {
         this.context = context;
         this.camera = camera;
@@ -44,13 +47,17 @@ public partial class CameraRenderer
         buffer.BeginSample(SampleName);
         ExecuteBuffer();
         lighting.Setup(context, cullingResults, shadowSettings, useLightsPerObject); //灯光相关设置 传递数据 渲染阴影等
+        postFXStack.SetUp(context, camera, postFXSettings); //后处理相关设置
         buffer.EndSample(SampleName);
         
         Setup(); // 初始设置
         DrawVisibleGeometry(useDynamicBatching, useGPUInstancing, useLightsPerObject); // 绘制可见的几何体
         DrawUnsupportedShaders(); // 绘制不支持的shader
-        DrawGizmos(); // 绘制编辑器图标
-        lighting.Cleanup(); //灯光相关的清理
+        DrawGizmosBeforeFX(); // 绘制编辑器图标 指定应在 ImageEffects 之前渲染的辅助图标
+        if (postFXStack.IsActive)
+            postFXStack.Render(frameBufferId); //执行后处理的具体操作
+        DrawGizmosAfterFX(); // 指定应在 ImageEffects 之后渲染的辅助图标
+        Cleanup();    //释放相关临时的纹理(后处理 阴影)
         Submit(); //提交执行
     }
     
@@ -75,6 +82,16 @@ public partial class CameraRenderer
         context.SetupCameraProperties(camera); // 调度特定于摄像机的全局着色器变量的设置 这样shader可以获取到当前帧下摄像机的信息 比如 MVP矩阵
 
         CameraClearFlags flags = camera.clearFlags; // 相机渲染时要清除的内容的枚举
+
+        if (postFXStack.IsActive)
+        {
+            if (flags > CameraClearFlags.Color)
+                flags = CameraClearFlags.Color; // 除非使用天空盒 否则始终清除深度和清除颜色
+            // 获取临时的渲染纹理(RT) 此纹理的着色器属性名称 像素宽度 像素高度 深度缓冲区位 纹理过滤模式 渲染纹理的格式
+            buffer.GetTemporaryRT(frameBufferId, camera.pixelWidth, camera.pixelHeight, 32, FilterMode.Bilinear, RenderTextureFormat.Default);
+            // 设置渲染目标 加载操作:忽视 即不加载到区块内存中 存储操作:储存在内存中
+            buffer.SetRenderTarget(frameBufferId, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
+        }
         
         buffer.ClearRenderTarget(flags <= CameraClearFlags.Depth, flags == CameraClearFlags.Color, flags == CameraClearFlags.Color ? camera.backgroundColor.linear : Color.clear); //清除渲染目标 包括深度 颜色 模板缓冲
         
@@ -124,5 +141,15 @@ public partial class CameraRenderer
     {
         context.ExecuteCommandBuffer(buffer); // 调度自定义图形命令缓冲区的执行 即提交指令 并不执行 需要context.Submit();
         buffer.Clear(); // 清除缓冲区中的所有命令
+    }
+
+    // 释放相关纹理
+    void Cleanup()
+    {
+        lighting.Cleanup(); //灯光相关清理
+        if (postFXStack.IsActive)
+        {
+            buffer.ReleaseTemporaryRT(frameBufferId); //释放后处理操作用到的临时纹理
+        }
     }
 }

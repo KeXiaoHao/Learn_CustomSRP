@@ -6,10 +6,6 @@
 #include "../ShaderLibrary/Light.hlsl"
 #include "../ShaderLibrary/BRDF.hlsl"
 
-bool4 unity_MetaFragmentControl; //用于生成不同的数据 通过各通道的值
-float unity_OneOverOutputBoost;
-float unity_MaxOutputValue;
-
 struct Attributes
 {
     float3 positionOS : POSITION;
