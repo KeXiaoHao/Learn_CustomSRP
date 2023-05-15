@@ -15,13 +15,20 @@ public partial class PostFXStack
         BloomHorizontal,
         BloomVertical,
         BloomCombine,
+        BloomScatter,
         BloomPrefilter,
-        Copy
+        BloomPrefilterFireflies,
+        BloomScatterFinal,
+        Copy,
+        ToneMappingACES,
+        ToneMappingNeutral,
+        ToneMappingReinhard
     }
 
     int bloomBucibicUpsamplingId = Shader.PropertyToID("_BloomBicubicUpsampling"),
         bloomPrefilterId = Shader.PropertyToID("_BloomPrefilter"),
         bloomThresholdId = Shader.PropertyToID("_BloomThreshold"),
+        bloomResultId = Shader.PropertyToID("_BloomResult"),
         bloomIntensityId = Shader.PropertyToID("_BloomIntensity"),
         fxSourceId = Shader.PropertyToID("_PostFXSource"),
         fxSource2Id = Shader.PropertyToID("_PostFXSource2");
@@ -34,23 +41,26 @@ public partial class PostFXStack
     public PostFXStack ()       //创建一个构造函数  跟踪bloom中的纹理
     {
         bloomPyramidId = Shader.PropertyToID("_BloomPyramid0");
-        for (int i = 1; i < maxBloomPyramidLevels * 2; i++)
+        for (int i = 0; i < maxBloomPyramidLevels * 2; i++)
         {
             Shader.PropertyToID("_BloomPyramid" + i);
         }
     }
+
+    private bool useHDR;
     
     ////////////////////////////////////////////////// buffer处理逻辑 //////////////////////////////////////////////////////////////////////
 
     /// <summary>
     /// 后处理有关设置
     /// </summary>
-    public void SetUp(ScriptableRenderContext context, Camera camera, PostFXSettings settings)
+    public void SetUp(ScriptableRenderContext context, Camera camera, PostFXSettings settings, bool useHDR)
     {
         this.context = context;
         this.camera = camera;
         //当有场景视图摄像机或游戏视图摄像机时 就启用后处理settings 否则为空
         this.settings = camera.cameraType <= CameraType.SceneView ? settings : null;
+        this.useHDR = useHDR;
         ApplySceneViewState();
     }
 
@@ -59,7 +69,15 @@ public partial class PostFXStack
     /// </summary>
     public void Render(int sourceID)
     {
-        DoBloom(sourceID);
+        if (DoBloom(sourceID))
+        {
+            DoToneMapping(bloomResultId);
+            buffer.ReleaseTemporaryRT(bloomResultId);
+        }
+        else
+        {
+            DoToneMapping(sourceID);
+        }
         context.ExecuteCommandBuffer(buffer); //提交指令
         buffer.Clear(); //清除缓冲区中的所有命令
     }
@@ -85,19 +103,18 @@ public partial class PostFXStack
     /// 后处理的Bloom效果
     /// </summary>
     /// <param name="sourceId">源纹理 输入纹理</param>
-    void DoBloom(int sourceId)
+    bool DoBloom(int sourceId)
     {
-        buffer.BeginSample("Bloom");
         PostFXSettings.BloomSettings bloom = settings.Bloom; //bloom参数配置
         int width = camera.pixelWidth / 2, height = camera.pixelHeight / 2;
         
         // 如果我们最终完全跳过bloom 将不得不中止并执行复制
         if (bloom.maxInterations == 0 || bloom.intensity <= 0f || height < bloom.downscaleLimit * 2 || width < bloom.downscaleLimit * 2)
         {
-            Draw(sourceId, BuiltinRenderTextureType.CameraTarget, Pass.Copy);
-            buffer.EndSample("Bloom");
-            return;
+            return false;
         }
+        
+        buffer.BeginSample("Bloom");
         
         // 亮度阈值曲线计算参数
         Vector4 threshold;
@@ -108,12 +125,12 @@ public partial class PostFXStack
         threshold.y -= threshold.x;
         buffer.SetGlobalVector(bloomThresholdId, threshold);
         
-        RenderTextureFormat format = RenderTextureFormat.Default;
+        RenderTextureFormat format = useHDR? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default;
         
         // 预过滤 以一半分辨率作为起点进行bloom的金字塔
         buffer.GetTemporaryRT(bloomPrefilterId, width, height, 0, FilterMode.Bilinear, format);
         //预先进行一次降采样 降低bloom的消耗
-        Draw(sourceId, bloomPrefilterId, Pass.BloomPrefilter);
+        Draw(sourceId, bloomPrefilterId, bloom.fadeFireflies ? Pass.BloomPrefilterFireflies : Pass.BloomPrefilter);
         width /= 2;
         height /= 2;
         
@@ -140,7 +157,22 @@ public partial class PostFXStack
         buffer.ReleaseTemporaryRT(bloomPrefilterId);
 
         buffer.SetGlobalFloat(bloomBucibicUpsamplingId, bloom.bicubicUpsampling ? 1f : 0f); //是否需要三线性过滤
-        buffer.SetGlobalFloat(bloomIntensityId, 1f);
+        
+        Pass combinePass, finalPass;
+        float finalIntensity;
+        if (bloom.mode == PostFXSettings.BloomSettings.Mode.Additive)
+        {
+            combinePass = finalPass = Pass.BloomCombine;
+            buffer.SetGlobalFloat(bloomIntensityId, 1f);
+            finalIntensity = bloom.intensity;
+        }
+        else
+        {
+            combinePass = Pass.BloomScatter;
+            finalPass = Pass.BloomScatterFinal;
+            buffer.SetGlobalFloat(bloomIntensityId, bloom.scatter);
+            finalIntensity = Mathf.Min(bloom.intensity, 0.95f);
+        }
         
         if (i > 1)
         {
@@ -150,7 +182,7 @@ public partial class PostFXStack
             for (i -= 1; i > 0; i--)
             {
                 buffer.SetGlobalTexture(fxSource2Id, toId + 1);
-                Draw(fromId, toId, Pass.BloomCombine);
+                Draw(fromId, toId, combinePass);
                 buffer.ReleaseTemporaryRT(fromId);
                 buffer.ReleaseTemporaryRT(toId + 1);
                 fromId = toId;
@@ -162,12 +194,25 @@ public partial class PostFXStack
             buffer.ReleaseTemporaryRT(bloomPyramidId);
         }
         
-        buffer.SetGlobalFloat(bloomIntensityId, bloom.intensity);
+        buffer.SetGlobalFloat(bloomIntensityId, finalIntensity);
         
         buffer.SetGlobalTexture(fxSource2Id, sourceId);
-        Draw(fromId, BuiltinRenderTextureType.CameraTarget, Pass.BloomCombine);
+        buffer.GetTemporaryRT(bloomResultId, camera.pixelWidth, camera.pixelHeight, 0, FilterMode.Bilinear, format);
+        Draw(fromId, bloomResultId, finalPass);
         buffer.ReleaseTemporaryRT(fromId);
         
         buffer.EndSample("Bloom");
+        return true;
+    }
+
+    /// <summary>
+    /// 色调映射
+    /// </summary>
+    /// <param name="sourceId">源纹理</param>
+    void DoToneMapping(int sourceId)
+    {
+        PostFXSettings.ToneMappingSettings.Mode mode = settings.ToneMapping.mode;
+        Pass pass = mode < 0 ? Pass.Copy : Pass.ToneMappingACES + (int)mode;
+        Draw(sourceId, BuiltinRenderTextureType.CameraTarget, pass);
     }
 }

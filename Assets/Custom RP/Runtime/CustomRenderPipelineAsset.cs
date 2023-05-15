@@ -15,10 +15,13 @@ public class CustomRenderPipelineAsset : RenderPipelineAsset
 
     [SerializeField]
     private PostFXSettings postFXSettings = default;
+
+    [SerializeField]
+    private bool allowHDR = true;
     
     // 重写创建实际的RenderPipeline函数
     protected override RenderPipeline CreatePipeline()
     {
-        return new CustomRenderPipeline(DynamicBatching, GPUInstancing, SRPBatches, useLightsPerObject, shadows, postFXSettings);
+        return new CustomRenderPipeline(allowHDR,DynamicBatching, GPUInstancing, SRPBatches, useLightsPerObject, shadows, postFXSettings);
     }
 }

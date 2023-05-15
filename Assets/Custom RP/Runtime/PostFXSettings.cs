@@ -23,6 +23,7 @@ public class PostFXSettings : ScriptableObject
         }
     }
     
+    //////////////////////////////////////////// Bloom /////////////////////////////////////////////////////////////
     [System.Serializable]
     public struct BloomSettings //Bloom参数配置
     {
@@ -37,9 +38,39 @@ public class PostFXSettings : ScriptableObject
         [Range(0f, 1f)] public float thresholdKnee; //阈值滑块
         
         [Min(0f)] public float intensity; //强度
+
+        public bool fadeFireflies; //是否淡化闪烁
+        
+        public enum Mode { Additive, Scattering }
+
+        public Mode mode; //散射模式
+
+        [Range(0.05f, 0.95f)]
+        public float scatter; //散射量
     }
 
-    [SerializeField]private BloomSettings bloom = default;
+    [SerializeField]private BloomSettings bloom = new BloomSettings{scatter = 0.7f};
 
     public BloomSettings Bloom => bloom;
+    
+    //////////////////////////////////////////// ToneMapping /////////////////////////////////////////////////////////////
+    
+    [System.Serializable]
+    public struct ToneMappingSettings
+    {
+        public enum Mode
+        {
+            None = -1,
+            ACES,
+            Neutral,
+            Reinhard
+        }
+
+        public Mode mode;
+    }
+
+    [SerializeField]
+    ToneMappingSettings toneMapping = default;
+
+    public ToneMappingSettings ToneMapping => toneMapping;
 }

@@ -24,6 +24,8 @@ public partial class CameraRenderer
     private PostFXStack postFXStack = new PostFXStack(); //声明一个后处理栈来调用
     private static int frameBufferId = Shader.PropertyToID("_CameraFrameBuffer");
 
+    private bool useHDR; //是否开启HDR
+
     /// <summary>
     /// 摄像机渲染器的渲染函数 在当前渲染context的基础上渲染当前摄像机
     /// </summary>
@@ -33,7 +35,7 @@ public partial class CameraRenderer
     /// <param name="useGPUInstancing">是否开启GPU实例化</param>
     /// <param name="useLightsPerObject">是否使用每个对象的光源模式</param>
     /// <param name="shadowSettings">阴影相关设置</param>
-    public void Render(ScriptableRenderContext context, Camera camera, bool useDynamicBatching, bool useGPUInstancing, bool useLightsPerObject, ShadowSettings shadowSettings, PostFXSettings postFXSettings)
+    public void Render(ScriptableRenderContext context, Camera camera, bool allowHDR, bool useDynamicBatching, bool useGPUInstancing, bool useLightsPerObject, ShadowSettings shadowSettings, PostFXSettings postFXSettings)
     {
         this.context = context;
         this.camera = camera;
@@ -44,10 +46,12 @@ public partial class CameraRenderer
         if (!Cull(shadowSettings.maxDistance))
             return; // 剔除
 
+        useHDR = allowHDR && camera.allowHDR; //开启HDR的条件
+
         buffer.BeginSample(SampleName);
         ExecuteBuffer();
         lighting.Setup(context, cullingResults, shadowSettings, useLightsPerObject); //灯光相关设置 传递数据 渲染阴影等
-        postFXStack.SetUp(context, camera, postFXSettings); //后处理相关设置
+        postFXStack.SetUp(context, camera, postFXSettings, useHDR); //后处理相关设置
         buffer.EndSample(SampleName);
         
         Setup(); // 初始设置
@@ -88,7 +92,7 @@ public partial class CameraRenderer
             if (flags > CameraClearFlags.Color)
                 flags = CameraClearFlags.Color; // 除非使用天空盒 否则始终清除深度和清除颜色
             // 获取临时的渲染纹理(RT) 此纹理的着色器属性名称 像素宽度 像素高度 深度缓冲区位 纹理过滤模式 渲染纹理的格式
-            buffer.GetTemporaryRT(frameBufferId, camera.pixelWidth, camera.pixelHeight, 32, FilterMode.Bilinear, RenderTextureFormat.Default);
+            buffer.GetTemporaryRT(frameBufferId, camera.pixelWidth, camera.pixelHeight, 32, FilterMode.Bilinear, useHDR? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default);
             // 设置渲染目标 加载操作:忽视 即不加载到区块内存中 存储操作:储存在内存中
             buffer.SetRenderTarget(frameBufferId, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
         }

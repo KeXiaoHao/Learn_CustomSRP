@@ -46,6 +46,17 @@ Shader "Hidden/Custom RP/Post FX Stack"
     	
     	Pass
         {
+	        Name "Bloom Scatter"
+
+	        HLSLPROGRAM
+        	#pragma target 3.5
+            #pragma vertex DefaultPassVertex
+            #pragma fragment BloomScatterPassFragment
+        	ENDHLSL
+        }
+    	
+    	Pass
+        {
 	        Name "Bloom Prefilter"
 
 	        HLSLPROGRAM
@@ -54,8 +65,30 @@ Shader "Hidden/Custom RP/Post FX Stack"
             #pragma fragment BloomPrefilterPassFragment
         	ENDHLSL
         }
-        
-        Pass
+    	
+    	Pass
+        {
+	        Name "Bloom PrefilterFireflies"
+
+	        HLSLPROGRAM
+        	#pragma target 3.5
+            #pragma vertex DefaultPassVertex
+            #pragma fragment BloomPrefilterFirefliesPassFragment
+        	ENDHLSL
+        }
+    	
+    	Pass
+        {
+	        Name "Bloom BloomScatterFinal"
+
+	        HLSLPROGRAM
+        	#pragma target 3.5
+            #pragma vertex DefaultPassVertex
+            #pragma fragment BloomScatterFinalPassFragment
+        	ENDHLSL
+        }
+    	
+    	Pass
         {
             Name "Copy"
 
@@ -64,6 +97,39 @@ Shader "Hidden/Custom RP/Post FX Stack"
             #pragma vertex DefaultPassVertex
             #pragma fragment CopyPassFragment
             ENDHLSL
+        }
+    	
+    	Pass
+        {
+            Name "ToneMappingACES"
+
+            HLSLPROGRAM
+            #pragma target 3.5
+            #pragma vertex DefaultPassVertex
+            #pragma fragment ToneMappingACESPassFragment
+            ENDHLSL
+        }
+    	
+        Pass
+        {
+	        Name "ToneMappingNeutral"
+
+	        HLSLPROGRAM
+        	#pragma target 3.5
+            #pragma vertex DefaultPassVertex
+            #pragma fragment ToneMappingNeutralPassFragment
+        	ENDHLSL
+        }
+    	
+    	Pass
+        {
+	        Name "ToneMappingReinhard"
+
+	        HLSLPROGRAM
+        	#pragma target 3.5
+            #pragma vertex DefaultPassVertex
+            #pragma fragment ToneMappingReinhardPassFragment
+        	ENDHLSL
         }
 
     }
