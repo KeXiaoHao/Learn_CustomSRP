@@ -35,7 +35,7 @@ public partial class CameraRenderer
     /// <param name="useGPUInstancing">是否开启GPU实例化</param>
     /// <param name="useLightsPerObject">是否使用每个对象的光源模式</param>
     /// <param name="shadowSettings">阴影相关设置</param>
-    public void Render(ScriptableRenderContext context, Camera camera, bool allowHDR, bool useDynamicBatching, bool useGPUInstancing, bool useLightsPerObject, ShadowSettings shadowSettings, PostFXSettings postFXSettings)
+    public void Render(ScriptableRenderContext context, Camera camera, bool allowHDR, bool useDynamicBatching, bool useGPUInstancing, bool useLightsPerObject, ShadowSettings shadowSettings, PostFXSettings postFXSettings, int colorLUTResolution)
     {
         this.context = context;
         this.camera = camera;
@@ -51,7 +51,7 @@ public partial class CameraRenderer
         buffer.BeginSample(SampleName);
         ExecuteBuffer();
         lighting.Setup(context, cullingResults, shadowSettings, useLightsPerObject); //灯光相关设置 传递数据 渲染阴影等
-        postFXStack.SetUp(context, camera, postFXSettings, useHDR); //后处理相关设置
+        postFXStack.SetUp(context, camera, postFXSettings, useHDR, colorLUTResolution); //后处理相关设置
         buffer.EndSample(SampleName);
         
         Setup(); // 初始设置

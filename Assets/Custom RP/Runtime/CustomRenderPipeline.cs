@@ -15,9 +15,12 @@ public partial class CustomRenderPipeline : RenderPipeline
     private PostFXSettings postFXSettings; //后处理设置
 
     private bool allowHDR; //是否开启HDR
+    
+    int colorLUTResolution; // LUT位数
 
-    public CustomRenderPipeline(bool allowHDR, bool useDynamicBatching, bool useGPUInstancing, bool useSRPBatches, bool useLightsPerObject, ShadowSettings shadowSettings, PostFXSettings postFXSettings) //构造函数
+    public CustomRenderPipeline(bool allowHDR, bool useDynamicBatching, bool useGPUInstancing, bool useSRPBatches, bool useLightsPerObject, ShadowSettings shadowSettings, PostFXSettings postFXSettings, int colorLUTResolution) //构造函数
     {
+        this.colorLUTResolution = colorLUTResolution;
         this.allowHDR = allowHDR;
         this.useDynamicBatching = useDynamicBatching;
         this.useGPUInstancing = useGPUInstancing;
@@ -35,7 +38,7 @@ public partial class CustomRenderPipeline : RenderPipeline
         // 循环渲染所有的摄像机
         foreach (var camera in cameras)
         {
-            renderer.Render(context, camera, allowHDR, useDynamicBatching, useGPUInstancing, useLightsPerObject, shadowSettings, postFXSettings);
+            renderer.Render(context, camera, allowHDR, useDynamicBatching, useGPUInstancing, useLightsPerObject, shadowSettings, postFXSettings, colorLUTResolution);
         }
     }
 }
