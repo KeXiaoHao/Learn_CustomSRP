@@ -10,13 +10,13 @@
 CBUFFER_START(_CustomLight)
     int _DirectionalLightCount; //最大数量的定向光
     float4 _DirectionalLightColors[MAX_DIRECTIONAL_LIGHT_COUNT]; //定向光的颜色
-    float4 _DirectionalLightDirections[MAX_DIRECTIONAL_LIGHT_COUNT]; //定向光的方向
+    float4 _DirectionalLightDirectionsAndMasks[MAX_DIRECTIONAL_LIGHT_COUNT]; //定向光的方向
     float4 _DirectionalLightShadowData[MAX_DIRECTIONAL_LIGHT_COUNT]; //定向光阴影
 
     int _OtherLightCount;       //最大数量的其他光源
     float4 _OtherLightColors[MAX_OTHER_LIGHT_COUNT];              //其他光的颜色
     float4 _OtherLightPositions[MAX_OTHER_LIGHT_COUNT];           //其他光的位置
-    float4 _OtherLightDirections[MAX_OTHER_LIGHT_COUNT];          //聚光灯的朝向
+    float4 _OtherLightDirectionsAndMasks[MAX_OTHER_LIGHT_COUNT];          //聚光灯的朝向
     float4 _OtherLightSpotAngles[MAX_OTHER_LIGHT_COUNT];          //聚光灯的角度
     float4 _OtherLightShadowData[MAX_OTHER_LIGHT_COUNT];          //其他光的阴影数据
 CBUFFER_END
@@ -27,6 +27,7 @@ struct Light
     float3 color;         // 灯光颜色
     float3 direction;     // 灯光方向
     float attenuation;    //灯光阴影
+    uint renderingLayerMask; //渲染层
 };
 
 ///////////////////////////////////////////////// 定向光获取 //////////////////////////////////////////////
@@ -54,7 +55,8 @@ Light GetDirectionalLight (int index, Surface surfaceWS, ShadowData shadowdata)
 {
     Light light;
     light.color = _DirectionalLightColors[index].rgb;
-    light.direction = _DirectionalLightDirections[index].xyz;
+    light.direction = _DirectionalLightDirectionsAndMasks[index].xyz;
+    light.renderingLayerMask = asuint(_DirectionalLightDirectionsAndMasks[index].w);
     DirectionalShadowData dirShadowData = GetDirectionalShadowData(index, shadowdata); //获取定向光的阴影数据
     light.attenuation = GetDirectionalShadowAttenuation(dirShadowData, shadowdata, surfaceWS); //计算定向光的阴影
     // light.attenuation = shadowdata.cascadeIndex * 0.25;
@@ -97,7 +99,8 @@ Light GetOtherLight(int index, Surface surfaceWS, ShadowData shadowData)
     float rangeAttenuation = Square(saturate(1.0 - Square(distanceSqr * _OtherLightPositions[index].w))); //范围衰减
 
     float4 spotAngles = _OtherLightSpotAngles[index]; //聚光灯的角度
-    float3 spotDirection = _OtherLightDirections[index].xyz;
+    float3 spotDirection = _OtherLightDirectionsAndMasks[index].xyz;
+    light.renderingLayerMask = asuint(_OtherLightDirectionsAndMasks[index].w);
     float spotAttenuation = Square(saturate(dot(spotDirection, light.direction) * spotAngles.x + spotAngles.y)); //聚光灯朝向
 
     OtherShadowData otherShadowData = GetOtherShadowData(index);

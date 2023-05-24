@@ -53,6 +53,12 @@ float3 GetLighting (Surface surface, BRDF brdf, Light light)
     return IncomingLight(surface, light) * DirectBRDF(surface, brdf, light);
 }
 
+// 返回表面和光源的蒙版是否重叠
+bool RenderingLayersOverlap(Surface surface, Light light)
+{
+    return (surface.renderingLayerMask & light.renderingLayerMask) != 0;
+}
+
 // 返回光照计算结果
 float3 GetLighting (Surface surfaceWS, BRDF brdf, GI gi)
 {
@@ -64,7 +70,8 @@ float3 GetLighting (Surface surfaceWS, BRDF brdf, GI gi)
     for (int i = 0; i < GetDirectionalLightCount(); i++)
     {
         Light light = GetDirectionalLight(i, surfaceWS, shadowData);
-        color += GetLighting(surfaceWS, brdf, light);
+        if (RenderingLayersOverlap(surfaceWS, light))
+            color += GetLighting(surfaceWS, brdf, light);
     }
 
     // 其他光源的叠加
@@ -73,14 +80,16 @@ float3 GetLighting (Surface surfaceWS, BRDF brdf, GI gi)
         {
             int lightIndex = unity_LightIndices[(uint)j / 4][(uint)j % 4];
             Light light = GetOtherLight(lightIndex, surfaceWS, shadowData);
-            color += GetLighting(surfaceWS, brdf, light);
+            if (RenderingLayersOverlap(surfaceWS, light))
+                color += GetLighting(surfaceWS, brdf, light);
             // return light.attenuation;
         }
     #else
         for (int j = 0; j < GetOtherLightCount(); j++)
         {
             Light otherLight = GetOtherLight(j, surfaceWS, shadowData);
-            color += GetLighting(surfaceWS, brdf, otherLight);
+            if (RenderingLayersOverlap(surfaceWS, otherLight))
+                color += GetLighting(surfaceWS, brdf, otherLight);
         }
     #endif
     

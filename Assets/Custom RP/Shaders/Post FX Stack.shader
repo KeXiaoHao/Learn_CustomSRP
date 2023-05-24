@@ -146,6 +146,8 @@ Shader "Hidden/Custom RP/Post FX Stack"
     	Pass
         {
 	        Name "Final"
+        	
+        	Blend [_FinalSrcBlend] [_FinalDstBlend]
 
 	        HLSLPROGRAM
         	#pragma target 3.5

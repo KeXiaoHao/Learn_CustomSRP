@@ -108,6 +108,7 @@ float4 LitPassFragment(Varyings i) : SV_TARGET
     surface.occlusion = GetOcclusion(config);
     surface.fresnelStrength = GetFresnel(config);
     surface.dither = InterleavedGradientNoise(i.positionCS.xy, 0);
+    surface.renderingLayerMask = asuint(unity_RenderingLayer.x); // asuint函数 将x的位模式解释为无符号整数
 
     #if defined(_PREMULTIPLY_ALPHA)
     BRDF brdf = GetBRDF(surface,true);
@@ -119,7 +120,7 @@ float4 LitPassFragment(Varyings i) : SV_TARGET
     
     float3 color = GetLighting(surface, brdf, gi);
     color += GetEmission(config);
-    return float4(color, surface.alpha);
+    return float4(color, GetFinalAlpha(surface.alpha));
 }
 
 #endif

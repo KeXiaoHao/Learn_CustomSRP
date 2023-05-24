@@ -33,3 +33,4 @@ MonoBehaviour:
       filter: 3
   postFXSettings: {fileID: 11400000, guid: 1d97815ae2221c24380d3fdcbc98381e, type: 2}
   allowHDR: 1
+  colorLUTResolution: 32

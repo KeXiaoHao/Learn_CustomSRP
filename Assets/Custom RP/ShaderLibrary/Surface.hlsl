@@ -18,6 +18,8 @@ struct Surface
     float fresnelStrength; // 菲尼尔强度
 
     float dither;          //抖动值
+
+    uint renderingLayerMask; //渲染层
 };
 
 #endif

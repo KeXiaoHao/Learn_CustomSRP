@@ -40,6 +40,8 @@ CBUFFER_START(UnityPerDraw)
     float unity_OneOverOutputBoost;
     float unity_MaxOutputValue;
 
+    float4 unity_RenderingLayer; // 渲染层
+
 
 CBUFFER_END
 

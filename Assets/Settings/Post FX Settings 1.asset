@@ -10,7 +10,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f2737c0ea5c1450458c5e1156a63c62d, type: 3}
-  m_Name: Post FX Settings
+  m_Name: Post FX Settings 1
   m_EditorClassIdentifier: 
   shader: {fileID: 4800000, guid: e51c33de94b52b0419e14de9faa0dbec, type: 3}
   bloom:
@@ -26,7 +26,7 @@ MonoBehaviour:
   colorAdjustments:
     postExposure: 0
     contrast: 0
-    colorFilter: {r: 1, g: 1, b: 1, a: 0}
+    colorFilter: {r: 0.97627246, g: 1, b: 0.7783019, a: 0}
     hueShift: 0
     saturation: 0
   whiteBalance:

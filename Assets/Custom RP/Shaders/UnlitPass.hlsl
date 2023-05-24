@@ -36,7 +36,7 @@ float4 UnlitPassFragment(Varyings i) : SV_TARGET
     clip(base.a - GetCutoff(i.baseUV));
     #endif
 
-    return base;
+    return float4(base.rgb, GetFinalAlpha(base.a));
 }
 
 #endif

@@ -69,14 +69,19 @@ public partial class PostFXStack
     private bool useHDR;
     
     int colorLUTResolution;
+
+    private CameraSettings.FinalBlendMode finalBlendMode;
+    int finalSrcBlendId = Shader.PropertyToID("_FinalSrcBlend"),
+        finalDstBlendId = Shader.PropertyToID("_FinalDstBlend");
     
     ////////////////////////////////////////////////// buffer处理逻辑 //////////////////////////////////////////////////////////////////////
 
     /// <summary>
     /// 后处理有关设置
     /// </summary>
-    public void SetUp(ScriptableRenderContext context, Camera camera, PostFXSettings settings, bool useHDR, int colorLUTResolution)
+    public void SetUp(ScriptableRenderContext context, Camera camera, PostFXSettings settings, bool useHDR, int colorLUTResolution, CameraSettings.FinalBlendMode finalBlendMode)
     {
+        this.finalBlendMode = finalBlendMode;
         this.colorLUTResolution = colorLUTResolution;
         this.context = context;
         this.camera = camera;
@@ -119,6 +124,26 @@ public partial class PostFXStack
         // DrawProcedural 绘制程序化几何体
         // matrix 要使用的变换矩阵 material 要使用的材质 shaderPass 要使用着色器的哪个通道 topology 程序化几何体的拓扑 vertexCount 要渲染的顶点数
         buffer.DrawProcedural(Matrix4x4.identity, settings.Material, (int)pass, MeshTopology.Triangles, 3);
+    }
+    
+    /// <summary>
+    /// 多相机的临时RT的绘制方法
+    /// </summary>
+    /// <param name="form">源纹理</param>
+    /// <param name="to">目标纹理</param>
+    /// <param name="pass">操作的Pass</param>
+    void DrawFinal(RenderTargetIdentifier form)
+    {
+        buffer.SetGlobalFloat(finalSrcBlendId, (float)finalBlendMode.source);
+        buffer.SetGlobalFloat(finalDstBlendId, (float)finalBlendMode.destination);
+        buffer.SetGlobalTexture(fxSourceId, form);
+        buffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget,
+            finalBlendMode.destination == BlendMode.Zero ? RenderBufferLoadAction.DontCare : RenderBufferLoadAction.Load,
+            RenderBufferStoreAction.Store);
+        buffer.SetViewport(camera.pixelRect); //设置渲染视口为当前相机在屏幕上的渲染位置(像素坐标)
+        // DrawProcedural 绘制程序化几何体
+        // matrix 要使用的变换矩阵 material 要使用的材质 shaderPass 要使用着色器的哪个通道 topology 程序化几何体的拓扑 vertexCount 要渲染的顶点数
+        buffer.DrawProcedural(Matrix4x4.identity, settings.Material, (int)Pass.Final, MeshTopology.Triangles, 3);
     }
 
     /// <summary>
@@ -312,7 +337,7 @@ public partial class PostFXStack
         Draw(sourceId, colorGradingLUTId, pass);
         
         buffer.SetGlobalVector(colorGradingLUTParametersId, new Vector4(1f / lutWidth, 1f / lutHeight, lutHeight - 1f));
-        Draw(sourceId, BuiltinRenderTextureType.CameraTarget, Pass.Final);
+        DrawFinal(sourceId);
         buffer.ReleaseTemporaryRT(colorGradingLUTId);
     }
 }

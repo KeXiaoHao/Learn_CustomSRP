@@ -20,6 +20,7 @@ UNITY_INSTANCING_BUFFER_START(UnityPerMaterial)
     UNITY_DEFINE_INSTANCED_PROP(float4, _DetailMap_ST)
     UNITY_DEFINE_INSTANCED_PROP(float4, _EmissionColor)
     UNITY_DEFINE_INSTANCED_PROP(float, _Cutoff)
+    UNITY_DEFINE_INSTANCED_PROP(float, _ZWrite)
     UNITY_DEFINE_INSTANCED_PROP(float, _Metallic)
     UNITY_DEFINE_INSTANCED_PROP(float, _Smoothness)
     UNITY_DEFINE_INSTANCED_PROP(float, _Occlusion)
@@ -40,6 +41,11 @@ struct InputConfig
     bool useMask;    //是否使用Mask贴图
     bool useDetail;  //是否使用细节贴图
 };
+
+float GetFinalAlpha(float alpha)
+{
+    return INPUT_PROP(_ZWrite) ? 1.0 : alpha;
+}
 
 InputConfig GetInputConfig(float2 baseUV, float2 detailUV = 0.0)
 {

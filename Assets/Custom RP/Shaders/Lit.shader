@@ -45,7 +45,7 @@ Shader "CustomRP/Lit"
         Pass
         {
             Tags { "LightMode" = "CustomLit"}
-            Blend [_SrcBlend] [_DstBlend]
+            Blend [_SrcBlend] [_DstBlend], One OneMinusSrcAlpha
             ZWrite [_ZWrite]
             
             HLSLPROGRAM

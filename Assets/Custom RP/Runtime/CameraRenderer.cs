@@ -26,6 +26,8 @@ public partial class CameraRenderer
 
     private bool useHDR; //是否开启HDR
 
+    private static CameraSettings defaultCameraSettings = new CameraSettings();
+
     /// <summary>
     /// 摄像机渲染器的渲染函数 在当前渲染context的基础上渲染当前摄像机
     /// </summary>
@@ -40,6 +42,12 @@ public partial class CameraRenderer
         this.context = context;
         this.camera = camera;
 
+        var crpCamera = camera.GetComponent<CustomRenderPipelineCamera>();
+        CameraSettings cameraSettings = crpCamera ? crpCamera.Settings : defaultCameraSettings;
+        
+        if (cameraSettings.overridePostFX)
+            postFXSettings = cameraSettings.postFXSettings;
+
         PrepareBuffer(); //将摄像机名字传给缓冲区名字
         PrepareForSceneWindow(); //在剔除之前执行Scene窗口UI绘制
         
@@ -50,12 +58,12 @@ public partial class CameraRenderer
 
         buffer.BeginSample(SampleName);
         ExecuteBuffer();
-        lighting.Setup(context, cullingResults, shadowSettings, useLightsPerObject); //灯光相关设置 传递数据 渲染阴影等
-        postFXStack.SetUp(context, camera, postFXSettings, useHDR, colorLUTResolution); //后处理相关设置
+        lighting.Setup(context, cullingResults, shadowSettings, useLightsPerObject, cameraSettings.maskLights ? cameraSettings.renderingLayerMask : -1); //灯光相关设置 传递数据 渲染阴影等
+        postFXStack.SetUp(context, camera, postFXSettings, useHDR, colorLUTResolution, cameraSettings.finalBlendMode); //后处理相关设置
         buffer.EndSample(SampleName);
         
         Setup(); // 初始设置
-        DrawVisibleGeometry(useDynamicBatching, useGPUInstancing, useLightsPerObject); // 绘制可见的几何体
+        DrawVisibleGeometry(useDynamicBatching, useGPUInstancing, useLightsPerObject, cameraSettings.renderingLayerMask); // 绘制可见的几何体
         DrawUnsupportedShaders(); // 绘制不支持的shader
         DrawGizmosBeforeFX(); // 绘制编辑器图标 指定应在 ImageEffects 之前渲染的辅助图标
         if (postFXStack.IsActive)
@@ -105,7 +113,7 @@ public partial class CameraRenderer
 
     }
 
-    void DrawVisibleGeometry(bool useDynamicBatching, bool useGPUInstancing, bool useLightsPerObject)
+    void DrawVisibleGeometry(bool useDynamicBatching, bool useGPUInstancing, bool useLightsPerObject, int renderingLayerMask)
     {
         PerObjectData lightsPerObjectFlags =
             useLightsPerObject ? PerObjectData.LightData | PerObjectData.LightIndices : PerObjectData.None; // 是否应使用每个对象的光源模式
@@ -119,7 +127,7 @@ public partial class CameraRenderer
             perObjectData = PerObjectData.ReflectionProbes | PerObjectData.Lightmaps | PerObjectData.ShadowMask | PerObjectData.LightProbe | PerObjectData.OcclusionProbe | PerObjectData.LightProbeProxyVolume | PerObjectData.OcclusionProbeProxyVolume | lightsPerObjectFlags //设置反射探针 光照贴图 阴影蒙版 灯光探针 遮挡探针 LPPV LPPV遮挡数据
         }; // 决定摄像机支持的shader pass 和绘制顺序等的配置
         drawingSettings.SetShaderPassName(1, litShaderTagId); //添加lit shader
-        var filteringSettings = new FilteringSettings(RenderQueueRange.opaque); // 决定过滤哪些可见objects的配置 包括支持的RenderQueue等
+        var filteringSettings = new FilteringSettings(RenderQueueRange.opaque, renderingLayerMask: (uint)renderingLayerMask); // 决定过滤哪些可见objects的配置 包括支持的RenderQueue等
         context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings); // 渲染cullingResults内的几何体 不透明物体
         
         context.DrawSkybox(camera); // 调度天空盒的绘制

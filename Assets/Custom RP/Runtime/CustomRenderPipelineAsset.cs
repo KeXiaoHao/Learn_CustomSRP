@@ -5,7 +5,7 @@ using UnityEngine.Rendering;
 /// 自定义SRP渲染管线资源
 /// </summary>
 [CreateAssetMenu(menuName = "Rendering/Custom Render Pipeline")]
-public class CustomRenderPipelineAsset : RenderPipelineAsset
+public partial class CustomRenderPipelineAsset : RenderPipelineAsset
 {
     [SerializeField]
     private bool DynamicBatching = true, GPUInstancing = true, SRPBatches = true, useLightsPerObject = true;
