@@ -6,7 +6,9 @@ CBUFFER_START(UnityPerDraw)
     float4x4 unity_ObjectToWorld;
     float4x4 unity_WorldToObject;
     real4 unity_WorldTransformParams; //物体缩放的奇偶性
-    float4 _ProjectionParams;         // x分量表明纹理坐标的v方向
+    float4 _ProjectionParams;         // 投影相关参数 x分量表明纹理坐标的v方向
+    float4 _ScreenParams;             // 屏幕相关参数
+    float4 _ZBufferParams;            // 原始深度到线性深度的转换因子
 
     real4 unity_LightData;            // Y分量代表灯光数量
     real4 unity_LightIndices[2];     //每个分量都是LightIndex 所以每个对象最大8个
@@ -41,6 +43,8 @@ CBUFFER_START(UnityPerDraw)
     float unity_MaxOutputValue;
 
     float4 unity_RenderingLayer; // 渲染层
+
+    float4 unity_OrthoParams; // 有关正交相机的信息
 
 
 CBUFFER_END

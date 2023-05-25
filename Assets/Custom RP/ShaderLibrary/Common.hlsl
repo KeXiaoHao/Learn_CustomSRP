@@ -26,6 +26,37 @@
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/SpaceTransforms.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Packing.hlsl"
 
+SAMPLER(sampler_linear_clamp);
+SAMPLER(sampler_point_clamp);
+
+// 判断是否是正交相机
+bool IsOrthographicCamera()
+{
+    return unity_OrthoParams.w; // 如果是正交相机 其最后一个分量将为1 否则将为零
+}
+
+//求出视角空间下的线性深度值
+float OrthographicDepthBufferToLinear(float rawDepth)
+{
+    #if UNITY_REVERSED_Z
+        rawDepth = 1.0 - rawDepth;
+    #endif
+    // z分量 远平面 y分量 近平面
+    // 要将其转换为视图空间深度 必须按相机的近远范围对其进行缩放 然后加上近平面距离
+    return (_ProjectionParams.z - _ProjectionParams.y) * rawDepth + _ProjectionParams.y;
+}
+
+#include "Fragment.hlsl"
+
+// LOD混合
+void ClipLOD (Fragment fragment, float fade)
+{
+    #if defined(LOD_FADE_CROSSFADE)
+    float dither = InterleavedGradientNoise(fragment.positionSS, 0);
+    clip(fade + (fade < 0.0 ? dither : -dither));
+    #endif
+}
+
 // 解码法线贴图
 float3 DecodeNormal (float4 sample, float scale)
 {

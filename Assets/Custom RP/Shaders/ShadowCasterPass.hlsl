@@ -44,9 +44,9 @@ void ShadowCasterPassFragment(Varyings i)
 {
     UNITY_SETUP_INSTANCE_ID(i);
 
-    InputConfig config = GetInputConfig(i.baseUV);
+    InputConfig config = GetInputConfig(i.positionCS, i.baseUV);
 
-    ClipLOD(i.positionCS.xy, unity_LODFade.x);
+    ClipLOD(config.fragment, unity_LODFade.x);
     
     float4 base = GetBase(config);
     

@@ -24,7 +24,7 @@ struct Attributes
 
 struct Varyings
 {
-    float4 positionCS : SV_POSITION;
+    float4 positionCS_SS : SV_POSITION;
     float3 positionWS : VAR_POSITION;
     float2 baseUV : VAR_BASE_UV;
     
@@ -47,7 +47,7 @@ Varyings LitPassVertex(Attributes input)
     TRANSFER_GI_DATA(input, output); //光照贴图传递 即output.lightMapUV = input.lightMapUV
     
     output.positionWS = TransformObjectToWorld(input.positionOS);
-    output.positionCS = TransformWorldToHClip(output.positionWS);
+    output.positionCS_SS = TransformWorldToHClip(output.positionWS);
     output.normalWS = TransformObjectToWorldNormal(input.normalOS);
 
     #if defined(_NORMAL_MAP)
@@ -67,9 +67,10 @@ float4 LitPassFragment(Varyings i) : SV_TARGET
 {
     UNITY_SETUP_INSTANCE_ID(i);
 
-    ClipLOD(i.positionCS.xy, unity_LODFade.x); //LOD抖动
-
-    InputConfig config = GetInputConfig(i.baseUV);
+    InputConfig config = GetInputConfig(i.positionCS_SS, i.baseUV);
+    
+    ClipLOD(config.fragment, unity_LODFade.x); //LOD抖动
+    
     #if defined(_MASK_MAP)
         config.useMask = true;
     #endif
@@ -84,7 +85,7 @@ float4 LitPassFragment(Varyings i) : SV_TARGET
     #if defined(_SHADOWS_CLIP)
         clip(base.a - GetCutoff(config));
     #elif defined(_SHADOWS_DITHER)
-        float dither = InterleavedGradientNoise(i.positionCS.xy, 0);
+        float dither = InterleavedGradientNoise(config.fragment.positionSS, 0);
         clip(base.a - dither);
     #endif
     
@@ -107,7 +108,7 @@ float4 LitPassFragment(Varyings i) : SV_TARGET
     surface.smoothness = GetSmoothness(config);
     surface.occlusion = GetOcclusion(config);
     surface.fresnelStrength = GetFresnel(config);
-    surface.dither = InterleavedGradientNoise(i.positionCS.xy, 0);
+    surface.dither = InterleavedGradientNoise(config.fragment.positionSS, 0);
     surface.renderingLayerMask = asuint(unity_RenderingLayer.x); // asuint函数 将x的位模式解释为无符号整数
 
     #if defined(_PREMULTIPLY_ALPHA)

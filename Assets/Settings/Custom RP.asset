@@ -12,6 +12,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ca1fc7830aac16a429cb41c30b71563d, type: 3}
   m_Name: Custom RP
   m_EditorClassIdentifier: 
+  cameraBuffer:
+    allowHDR: 1
+    copyColor: 1
+    copyColorReflection: 0
+    copyDepth: 1
+    copyDepthReflections: 0
   DynamicBatching: 0
   GPUInstancing: 0
   SRPBatches: 1
@@ -32,5 +38,5 @@ MonoBehaviour:
       atlasSize: 1024
       filter: 3
   postFXSettings: {fileID: 11400000, guid: 1d97815ae2221c24380d3fdcbc98381e, type: 2}
-  allowHDR: 1
   colorLUTResolution: 32
+  cameraRendererShader: {fileID: 4800000, guid: abf93059f86c6254691195b1a5d2bfad, type: 3}

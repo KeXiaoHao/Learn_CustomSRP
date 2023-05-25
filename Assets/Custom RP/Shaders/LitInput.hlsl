@@ -40,6 +40,7 @@ struct InputConfig
     float2 detailUV; //细节贴图UV
     bool useMask;    //是否使用Mask贴图
     bool useDetail;  //是否使用细节贴图
+    Fragment fragment;
 };
 
 float GetFinalAlpha(float alpha)
@@ -47,13 +48,14 @@ float GetFinalAlpha(float alpha)
     return INPUT_PROP(_ZWrite) ? 1.0 : alpha;
 }
 
-InputConfig GetInputConfig(float2 baseUV, float2 detailUV = 0.0)
+InputConfig GetInputConfig(float4 positionSS, float2 baseUV, float2 detailUV = 0.0)
 {
     InputConfig c;
     c.baseUV = baseUV;
     c.detailUV = detailUV;
     c.useMask = false;
     c.useDetail = false;
+    c.fragment = GetFragment(positionSS);
     return c;
 }
 
@@ -166,15 +168,6 @@ float3 GetNormalTS (InputConfig c)
     }
 
     return normal;
-}
-
-// LOD混合
-void ClipLOD (float2 positionCS, float fade)
-{
-    #if defined(LOD_FADE_CROSSFADE)
-    float dither = InterleavedGradientNoise(positionCS.xy, 0);
-    clip(fade + (fade < 0.0 ? dither : -dither));
-    #endif
 }
 
 #endif

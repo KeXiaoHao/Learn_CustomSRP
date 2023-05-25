@@ -4,6 +4,8 @@ using UnityEngine.Rendering;
 [Serializable]
 public class CameraSettings
 {
+    public bool copyColor = true, copyDepth = true;
+    
     [RenderingLayerMaskField] //创建下拉菜单
     public int renderingLayerMask = -1;
     

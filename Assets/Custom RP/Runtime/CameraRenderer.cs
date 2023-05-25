@@ -22,28 +22,58 @@ public partial class CameraRenderer
     private Lighting lighting = new Lighting(); //声明lighting来获取灯光数据
 
     private PostFXStack postFXStack = new PostFXStack(); //声明一个后处理栈来调用
-    private static int frameBufferId = Shader.PropertyToID("_CameraFrameBuffer");
+    // private static int frameBufferId = Shader.PropertyToID("_CameraFrameBuffer");
+    private static int colorAttachmentId = Shader.PropertyToID("_CameraColorAttachment"),   // 颜色缓冲
+                        depthAttachmentId = Shader.PropertyToID("_CameraDepthAttachment"),  // 深度缓冲
+                        colorTextureId = Shader.PropertyToID("_CameraColorTexture"),        // 颜色纹理
+                        depthTextureId = Shader.PropertyToID("_CameraDepthTexture"),        // 深度纹理
+                        sourceTextureId = Shader.PropertyToID("_SourceTexture"),            // 源纹理
+                        srcBlendId = Shader.PropertyToID("_CameraSrcBlend"),                // 源混合因子
+                        dstBlendId = Shader.PropertyToID("_CameraDstBlend");                // 目标混合因子
 
     private bool useHDR; //是否开启HDR
+    
+    bool useColorTexture, useDepthTexture, useIntermediateBuffer; // 是否使用深度纹理 是否使用中间帧缓冲
+    
+    static bool copyTextureSupported = SystemInfo.copyTextureSupport > CopyTextureSupport.None; //是否支持纹理复制 针对 WebGL 2.0等
 
     private static CameraSettings defaultCameraSettings = new CameraSettings();
+    
+    Material material;
+    Texture2D missingTexture; // 无效的深度纹理
+
+    // 含有shader参数的构造函数
+    public CameraRenderer(Shader shader)
+    {
+        material = CoreUtils.CreateEngineMaterial(shader);
+        missingTexture = new Texture2D(1, 1) { hideFlags = HideFlags.HideAndDontSave, name = "Missing" };
+        missingTexture.SetPixel(0, 0, Color.white * 0.5f);
+        missingTexture.Apply(true, true);
+    }
+    
+    ////////////////////////////////////////// 相机渲染主要函数 /////////////////////////////////////////////////////
 
     /// <summary>
     /// 摄像机渲染器的渲染函数 在当前渲染context的基础上渲染当前摄像机
     /// </summary>
-    /// <param name="context">context</param>
-    /// <param name="camera">当前的摄像机</param>
-    /// <param name="useDynamicBatching">是否开启动态批处理</param>
-    /// <param name="useGPUInstancing">是否开启GPU实例化</param>
-    /// <param name="useLightsPerObject">是否使用每个对象的光源模式</param>
-    /// <param name="shadowSettings">阴影相关设置</param>
-    public void Render(ScriptableRenderContext context, Camera camera, bool allowHDR, bool useDynamicBatching, bool useGPUInstancing, bool useLightsPerObject, ShadowSettings shadowSettings, PostFXSettings postFXSettings, int colorLUTResolution)
+    public void Render(ScriptableRenderContext context, Camera camera, CameraBufferSettings bufferSettings, bool useDynamicBatching, bool useGPUInstancing, bool useLightsPerObject, ShadowSettings shadowSettings, PostFXSettings postFXSettings, int colorLUTResolution)
     {
         this.context = context;
         this.camera = camera;
 
         var crpCamera = camera.GetComponent<CustomRenderPipelineCamera>();
         CameraSettings cameraSettings = crpCamera ? crpCamera.Settings : defaultCameraSettings;
+
+        if (camera.cameraType == CameraType.Reflection)
+        {
+            useColorTexture = bufferSettings.copyColorReflection;
+            useDepthTexture = bufferSettings.copyDepthReflections;
+        }
+        else
+        {
+            useColorTexture = bufferSettings.copyColor && cameraSettings.copyColor;
+            useDepthTexture = bufferSettings.copyDepth && cameraSettings.copyDepth;
+        }
         
         if (cameraSettings.overridePostFX)
             postFXSettings = cameraSettings.postFXSettings;
@@ -54,7 +84,7 @@ public partial class CameraRenderer
         if (!Cull(shadowSettings.maxDistance))
             return; // 剔除
 
-        useHDR = allowHDR && camera.allowHDR; //开启HDR的条件
+        useHDR = bufferSettings.allowHDR && camera.allowHDR; //开启HDR的条件
 
         buffer.BeginSample(SampleName);
         ExecuteBuffer();
@@ -67,7 +97,13 @@ public partial class CameraRenderer
         DrawUnsupportedShaders(); // 绘制不支持的shader
         DrawGizmosBeforeFX(); // 绘制编辑器图标 指定应在 ImageEffects 之前渲染的辅助图标
         if (postFXStack.IsActive)
-            postFXStack.Render(frameBufferId); //执行后处理的具体操作
+            postFXStack.Render(colorAttachmentId); //执行后处理的具体操作
+        // 如果后期FX未处于活动状态 但我们确实使用中间缓冲区 则通过调用Draw将颜色缓冲复制到相机目标
+        else if (useIntermediateBuffer)
+        {
+            DrawFinal(cameraSettings.finalBlendMode);
+            ExecuteBuffer();
+        }
         DrawGizmosAfterFX(); // 指定应在 ImageEffects 之后渲染的辅助图标
         Cleanup();    //释放相关临时的纹理(后处理 阴影)
         Submit(); //提交执行
@@ -94,20 +130,26 @@ public partial class CameraRenderer
         context.SetupCameraProperties(camera); // 调度特定于摄像机的全局着色器变量的设置 这样shader可以获取到当前帧下摄像机的信息 比如 MVP矩阵
 
         CameraClearFlags flags = camera.clearFlags; // 相机渲染时要清除的内容的枚举
+        
+        useIntermediateBuffer = useColorTexture || useDepthTexture || postFXStack.IsActive; // 当使用深度纹理h或颜色纹理或者开启后处理时 使用中间帧缓冲
 
-        if (postFXStack.IsActive)
+        if (useIntermediateBuffer)
         {
             if (flags > CameraClearFlags.Color)
                 flags = CameraClearFlags.Color; // 除非使用天空盒 否则始终清除深度和清除颜色
             // 获取临时的渲染纹理(RT) 此纹理的着色器属性名称 像素宽度 像素高度 深度缓冲区位 纹理过滤模式 渲染纹理的格式
-            buffer.GetTemporaryRT(frameBufferId, camera.pixelWidth, camera.pixelHeight, 32, FilterMode.Bilinear, useHDR? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default);
+            buffer.GetTemporaryRT(colorAttachmentId, camera.pixelWidth, camera.pixelHeight, 32, FilterMode.Bilinear, useHDR? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default);
+            buffer.GetTemporaryRT(depthAttachmentId, camera.pixelWidth, camera.pixelHeight, 32, FilterMode.Point, RenderTextureFormat.Depth);
             // 设置渲染目标 加载操作:忽视 即不加载到区块内存中 存储操作:储存在内存中
-            buffer.SetRenderTarget(frameBufferId, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
+            buffer.SetRenderTarget(colorAttachmentId, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store,
+                depthAttachmentId, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
         }
         
         buffer.ClearRenderTarget(flags <= CameraClearFlags.Depth, flags == CameraClearFlags.Color, flags == CameraClearFlags.Color ? camera.backgroundColor.linear : Color.clear); //清除渲染目标 包括深度 颜色 模板缓冲
         
         buffer.BeginSample(SampleName); // 在Profiler和Frame Debugger中开启对缓冲区的监测
+        
+        buffer.SetGlobalTexture(depthTextureId, missingTexture); // 将无效的纹理用于末尾的深度纹理
 
         ExecuteBuffer(); //提交指令
 
@@ -131,6 +173,9 @@ public partial class CameraRenderer
         context.DrawRenderers(cullingResults, ref drawingSettings, ref filteringSettings); // 渲染cullingResults内的几何体 不透明物体
         
         context.DrawSkybox(camera); // 调度天空盒的绘制
+        
+        if (useColorTexture || useDepthTexture)
+            CopyAttachments(); //复制深度纹理
 
         sortingSettings.criteria = SortingCriteria.CommonTransparent; // 从后往前
         drawingSettings.sortingSettings = sortingSettings;
@@ -159,9 +204,91 @@ public partial class CameraRenderer
     void Cleanup()
     {
         lighting.Cleanup(); //灯光相关清理
-        if (postFXStack.IsActive)
+        if (useIntermediateBuffer)
         {
-            buffer.ReleaseTemporaryRT(frameBufferId); //释放后处理操作用到的临时纹理
+            buffer.ReleaseTemporaryRT(colorAttachmentId); //释放后处理操作用到的临时纹理
+            buffer.ReleaseTemporaryRT(depthAttachmentId);
+            if (useColorTexture)
+            {
+                buffer.ReleaseTemporaryRT(colorTextureId);
+            }
+            if (useDepthTexture)
+            {
+                buffer.ReleaseTemporaryRT(depthTextureId);
+            }
         }
+    }
+    
+    ////////////////////////////////////////// 相关方法 /////////////////////////////////////////////////////
+
+    // 复制颜色和深度纹理
+    void CopyAttachments()
+    {
+        if (useColorTexture)
+        {
+            buffer.GetTemporaryRT(colorTextureId, camera.pixelWidth, camera.pixelHeight, 0, FilterMode.Bilinear,
+                useHDR ? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default);
+            if (copyTextureSupported)
+            {
+                buffer.CopyTexture(colorAttachmentId, colorTextureId);
+            }
+            else
+            {
+                Draw(colorAttachmentId, colorTextureId);
+            }
+        }
+        
+        if (useDepthTexture)
+        {
+            buffer.GetTemporaryRT(depthTextureId, camera.pixelWidth, camera.pixelHeight, 32, FilterMode.Point, RenderTextureFormat.Depth);
+            if (copyTextureSupported)
+            {
+                buffer.CopyTexture(depthAttachmentId, depthTextureId);
+            }
+            else
+            {
+                // 对于WebGL2.0 只能通过着色器进行复制 这效率较低 但至少可以运行
+                Draw(depthAttachmentId, depthTextureId, true);
+            }
+        }
+        
+        if (!copyTextureSupported)
+        {
+            // 因为会更改呈现目标 进一步绘制会出错 之后 我们必须将渲染目标设置回相机缓冲区 再次加载
+            buffer.SetRenderTarget(colorAttachmentId, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store,
+                depthAttachmentId, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store);
+        }
+        
+        ExecuteBuffer();
+    }
+
+    public void Dispose()
+    {
+        CoreUtils.Destroy(material);
+        CoreUtils.Destroy(missingTexture);
+    }
+
+    /// <summary>
+    /// 临时RT绘制
+    /// </summary>
+    void Draw(RenderTargetIdentifier from, RenderTargetIdentifier to, bool isDepth = false)
+    {
+        buffer.SetGlobalTexture(sourceTextureId, from);
+        buffer.SetRenderTarget(to, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
+        buffer.DrawProcedural(Matrix4x4.identity, material, isDepth ? 1 : 0, MeshTopology.Triangles, 3);
+    }
+
+    void DrawFinal(CameraSettings.FinalBlendMode finalBlendMode)
+    {
+        buffer.SetGlobalFloat(srcBlendId, (float)finalBlendMode.source);
+        buffer.SetGlobalFloat(dstBlendId, (float)finalBlendMode.destination);
+        buffer.SetGlobalTexture(sourceTextureId, colorAttachmentId);
+        buffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget,
+            finalBlendMode.destination == BlendMode.Zero ? RenderBufferLoadAction.DontCare : RenderBufferLoadAction.Load,
+            RenderBufferStoreAction.Store);
+        buffer.SetViewport(camera.pixelRect);
+        buffer.DrawProcedural(Matrix4x4.identity, material, 0, MeshTopology.Triangles, 3);
+        buffer.SetGlobalFloat(srcBlendId, 1f);
+        buffer.SetGlobalFloat(dstBlendId, 0f);
     }
 }

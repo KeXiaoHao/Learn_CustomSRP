@@ -6,20 +6,28 @@ using LightType = UnityEngine.LightType;
 public partial class CustomRenderPipeline
 {
     partial void InitializeForEditor();
-    
+    partial void DisposeForEditor();
 
-// #if UNITY_EDITOR
+
+#if UNITY_EDITOR
 
     partial void InitializeForEditor()
     {
         Lightmapping.SetDelegate(lightsDelegate);
     }
 
+    partial void DisposeForEditor()
+    {
+        //base.Dispose(disposing);
+        Lightmapping.ResetDelegate();
+    }
+
     // 在管线被释放时清理和重置委托
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
-        Lightmapping.ResetDelegate();
+        DisposeForEditor();
+        renderer.Dispose();
     }
 
     // RequestLightsDelegate 在将光源转换为烘焙后端可理解的形式时调用的委托
@@ -63,5 +71,5 @@ public partial class CustomRenderPipeline
             output[i] = lightData;
         }
     };
-// #endif
+#endif
 }
