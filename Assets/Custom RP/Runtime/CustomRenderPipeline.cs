@@ -44,4 +44,13 @@ public partial class CustomRenderPipeline : RenderPipeline
         }
     }
     
+    
+    // 在管线被释放时清理和重置委托
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+
+        DisposeForEditor();
+        renderer.Dispose();
+    }
 }

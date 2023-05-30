@@ -27,6 +27,8 @@ public class PostFXSettings : ScriptableObject
     [System.Serializable]
     public struct BloomSettings //Bloom参数配置
     {
+        public bool ignoreRenderScale; //忽略渲染比例
+        
         [Range(0f, 16f)]public int maxInterations; //最大迭代次数
         
         [Min(1f)]public int downscaleLimit; //最低的降采样像素

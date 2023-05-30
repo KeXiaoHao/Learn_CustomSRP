@@ -1,39 +1,19 @@
 using Unity.Collections;
 using UnityEngine;
 using UnityEngine.Experimental.GlobalIllumination;
+using Lightmapping = UnityEngine.Experimental.GlobalIllumination.Lightmapping;
 using LightType = UnityEngine.LightType;
 
 public partial class CustomRenderPipeline
 {
     partial void InitializeForEditor();
     partial void DisposeForEditor();
-
-
-#if UNITY_EDITOR
-
-    partial void InitializeForEditor()
-    {
-        Lightmapping.SetDelegate(lightsDelegate);
-    }
-
-    partial void DisposeForEditor()
-    {
-        //base.Dispose(disposing);
-        Lightmapping.ResetDelegate();
-    }
-
-    // 在管线被释放时清理和重置委托
-    protected override void Dispose(bool disposing)
-    {
-        base.Dispose(disposing);
-        DisposeForEditor();
-        renderer.Dispose();
-    }
-
+    
     // RequestLightsDelegate 在将光源转换为烘焙后端可理解的形式时调用的委托
     // requests 要转换的光源列表
     // lightsOutput 委托函数生成的输出 必须将应跳过的光源添加到输出 并使用LightDataGI结构中的 InitNoBake 对其进行初始化
     private static Lightmapping.RequestLightsDelegate lightsDelegate = (Light[] lights, NativeArray < LightDataGI > output) => {
+#if UNITY_EDITOR
         var lightData = new LightDataGI();
         for (int i = 0; i < lights.Length; i++)
         {
@@ -70,6 +50,38 @@ public partial class CustomRenderPipeline
             lightData.falloff = FalloffType.InverseSquared; //用于烘焙点光源和聚光灯的衰减模型设置成平方反比距离衰减
             output[i] = lightData;
         }
+#else
+        LightDataGI lightData = new LightDataGI();
+
+            for (int i = 0; i < lights.Length; i++)
+            {
+                Light light = lights[i];
+                lightData.InitNoBake(light.GetInstanceID());
+                output[i] = lightData;
+            }
+#endif
     };
+
+
+#if UNITY_EDITOR
+
+    partial void InitializeForEditor()
+    {
+        Lightmapping.SetDelegate(lightsDelegate);
+    }
+
+    partial void DisposeForEditor()
+    {
+        //base.Dispose(disposing);
+        Lightmapping.ResetDelegate();
+    }
+
+    // 在管线被释放时清理和重置委托
+    // protected override void Dispose(bool disposing)
+    // {
+    //     base.Dispose(disposing);
+    //     DisposeForEditor();
+    //     renderer.Dispose();
+    // }
 #endif
 }

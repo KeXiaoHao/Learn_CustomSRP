@@ -69,7 +69,10 @@ public partial class CameraRenderer
     partial void PrepareForSceneWindow()
     {
         if (camera.cameraType == CameraType.SceneView)
+        {
             ScriptableRenderContext.EmitWorldGeometryForSceneView(camera); //将 UI 几何形状发送到 Scene 视图以进行渲染
+            useScaleRendering = false;
+        }
     }
 
     partial void PrepareBuffer()

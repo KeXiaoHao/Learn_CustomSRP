@@ -26,7 +26,8 @@ public partial class PostFXStack
         ToneMappingACES,
         ToneMappingNeutral,
         ToneMappingReinhard,
-        Final
+        Final,
+        FinalRescale
     }
 
     int bloomBucibicUpsamplingId = Shader.PropertyToID("_BloomBicubicUpsampling"),
@@ -50,7 +51,9 @@ public partial class PostFXStack
         smhRangeId = Shader.PropertyToID("_SMHRange"),
         colorGradingLUTParametersId = Shader.PropertyToID("_ColorGradingLUTParameters"),
         colorGradingLUTInLogId = Shader.PropertyToID("_ColorGradingLUTInLogC"),
-        colorGradingLUTId = Shader.PropertyToID("_ColorGradingLUT");
+        colorGradingLUTId = Shader.PropertyToID("_ColorGradingLUT"),
+        copyBicubicId = Shader.PropertyToID("_CopyBicubic"),
+        finalResultId = Shader.PropertyToID("_FinalResult");
 
     public bool IsActive => settings != null; //当后处理设置不为空时返回true
     
@@ -73,14 +76,20 @@ public partial class PostFXStack
     private CameraSettings.FinalBlendMode finalBlendMode;
     int finalSrcBlendId = Shader.PropertyToID("_FinalSrcBlend"),
         finalDstBlendId = Shader.PropertyToID("_FinalDstBlend");
+
+    private Vector2Int bufferSize;
+    
+    CameraBufferSettings.BicubicRescalingMode bicubicRescaling; //双三次采样
     
     ////////////////////////////////////////////////// buffer处理逻辑 //////////////////////////////////////////////////////////////////////
 
     /// <summary>
     /// 后处理有关设置
     /// </summary>
-    public void SetUp(ScriptableRenderContext context, Camera camera, PostFXSettings settings, bool useHDR, int colorLUTResolution, CameraSettings.FinalBlendMode finalBlendMode)
+    public void SetUp(ScriptableRenderContext context, Camera camera, Vector2Int bufferSize, PostFXSettings settings, bool useHDR, int colorLUTResolution, CameraSettings.FinalBlendMode finalBlendMode, CameraBufferSettings.BicubicRescalingMode bicubicRescaling)
     {
+        this.bicubicRescaling = bicubicRescaling;
+        this.bufferSize = bufferSize;
         this.finalBlendMode = finalBlendMode;
         this.colorLUTResolution = colorLUTResolution;
         this.context = context;
@@ -132,7 +141,7 @@ public partial class PostFXStack
     /// <param name="form">源纹理</param>
     /// <param name="to">目标纹理</param>
     /// <param name="pass">操作的Pass</param>
-    void DrawFinal(RenderTargetIdentifier form)
+    void DrawFinal(RenderTargetIdentifier form, Pass pass)
     {
         buffer.SetGlobalFloat(finalSrcBlendId, (float)finalBlendMode.source);
         buffer.SetGlobalFloat(finalDstBlendId, (float)finalBlendMode.destination);
@@ -143,7 +152,7 @@ public partial class PostFXStack
         buffer.SetViewport(camera.pixelRect); //设置渲染视口为当前相机在屏幕上的渲染位置(像素坐标)
         // DrawProcedural 绘制程序化几何体
         // matrix 要使用的变换矩阵 material 要使用的材质 shaderPass 要使用着色器的哪个通道 topology 程序化几何体的拓扑 vertexCount 要渲染的顶点数
-        buffer.DrawProcedural(Matrix4x4.identity, settings.Material, (int)Pass.Final, MeshTopology.Triangles, 3);
+        buffer.DrawProcedural(Matrix4x4.identity, settings.Material, (int)pass, MeshTopology.Triangles, 3);
     }
 
     /// <summary>
@@ -153,7 +162,17 @@ public partial class PostFXStack
     bool DoBloom(int sourceId)
     {
         PostFXSettings.BloomSettings bloom = settings.Bloom; //bloom参数配置
-        int width = camera.pixelWidth / 2, height = camera.pixelHeight / 2;
+        int width, height; //缓冲区的宽高
+        if (bloom.ignoreRenderScale)
+        {
+            width = camera.pixelWidth / 2;
+            height = camera.pixelHeight / 2;
+        }
+        else
+        {
+            width = bufferSize.x / 2;
+            height = bufferSize.y / 2;
+        }
         
         // 如果我们最终完全跳过bloom 将不得不中止并执行复制
         if (bloom.maxInterations == 0 || bloom.intensity <= 0f || height < bloom.downscaleLimit * 2 || width < bloom.downscaleLimit * 2)
@@ -183,9 +202,9 @@ public partial class PostFXStack
         
         int fromId = bloomPrefilterId, toId = bloomPyramidId + 1;
         
-        int i;
+        int i = 0;
         // 遍历所有bloom块 并复制作为新的源 再尺寸减半 递增下去
-        for (i = 0; i < bloom.maxInterations; i++)
+        for (; i < bloom.maxInterations; i++)
         {
             if (height < bloom.downscaleLimit || width < bloom.downscaleLimit)
             {
@@ -202,6 +221,8 @@ public partial class PostFXStack
             height /= 2;
         }
         buffer.ReleaseTemporaryRT(bloomPrefilterId);
+        
+        buffer.SetGlobalFloat(bloomIntensityId, bloom.intensity);
 
         buffer.SetGlobalFloat(bloomBucibicUpsamplingId, bloom.bicubicUpsampling ? 1f : 0f); //是否需要三线性过滤
         
@@ -244,7 +265,7 @@ public partial class PostFXStack
         buffer.SetGlobalFloat(bloomIntensityId, finalIntensity);
         
         buffer.SetGlobalTexture(fxSource2Id, sourceId);
-        buffer.GetTemporaryRT(bloomResultId, camera.pixelWidth, camera.pixelHeight, 0, FilterMode.Bilinear, format);
+        buffer.GetTemporaryRT(bloomResultId, bufferSize.x, bufferSize.y, 0, FilterMode.Bilinear, format);
         Draw(fromId, bloomResultId, finalPass);
         buffer.ReleaseTemporaryRT(fromId);
         
@@ -337,7 +358,29 @@ public partial class PostFXStack
         Draw(sourceId, colorGradingLUTId, pass);
         
         buffer.SetGlobalVector(colorGradingLUTParametersId, new Vector4(1f / lutWidth, 1f / lutHeight, lutHeight - 1f));
-        DrawFinal(sourceId);
+        
+        if (bufferSize.x == camera.pixelWidth)
+        {
+            DrawFinal(sourceId, Pass.Final);
+        }
+        else
+        {
+            // 如果我们需要重新缩放渲染 那么我们必须绘制两次
+            buffer.SetGlobalFloat(finalSrcBlendId, 1f);
+            buffer.SetGlobalFloat(finalDstBlendId, 0f); // // 将最终混合模式设置为 One Zero
+            // 首先获取与当前缓冲区大小匹配的新临时渲染纹理 当我们在其中存储LDR颜色时 我们可以使用默认的渲染纹理格式
+            buffer.GetTemporaryRT(finalResultId, bufferSize.x, bufferSize.y, 0, FilterMode.Bilinear, RenderTextureFormat.Default);
+            // 然后使用 Pass.Final 通道执行常规绘制 并将最终混合模式设置为 One Zero
+            Draw(sourceId, finalResultId, Pass.Final);
+            bool bicubicSampling =
+                bicubicRescaling == CameraBufferSettings.BicubicRescalingMode.UpAndDown ||
+                bicubicRescaling == CameraBufferSettings.BicubicRescalingMode.UpOnly &&
+                bufferSize.x < camera.pixelWidth; //双三次采样仅用于上下模式 或者如果使用缩小的渲染比例 则仅向上模式
+            buffer.SetGlobalFloat(copyBicubicId, bicubicSampling ? 1f : 0f); //是否采样双三次采样
+            // 使用最终的 Pass.FinalRescale 通道执行最终的绘制 然后释放临时缓冲区
+            DrawFinal(finalResultId, Pass.FinalRescale);
+            buffer.ReleaseTemporaryRT(finalResultId);
+        }
         buffer.ReleaseTemporaryRT(colorGradingLUTId);
     }
 }

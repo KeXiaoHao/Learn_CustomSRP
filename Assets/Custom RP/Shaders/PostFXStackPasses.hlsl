@@ -31,6 +31,8 @@ float4 _SMHShadows, _SMHMidtones, _SMHHighlights, _SMHRange;    // 阴影中间�
 float4 _ColorGradingLUTParameters; // lut颜色
 bool _ColorGradingLUTInLogC; // 是否使用LogC空间
 
+bool _CopyBicubic; // 是否双三次采样
+
 //=====================================================================================================//
 
 //采样脚本传来的临时纹理
@@ -354,6 +356,18 @@ float4 FinalPassFragment(Varyings input) : SV_TARGET
     float4 color = GetSource(input.screenUV);
     color.rgb = ApplyColorGradingLUT(color.rgb);
     return color;
+}
+
+float4 FinalPassFragmentRescale(Varyings input) : SV_TARGET
+{
+    if (_CopyBicubic)
+    {
+        return GetSourceBicubic(input.screenUV);
+    }
+    else
+    {
+        return GetSource(input.screenUV);
+    }
 }
 
 #endif

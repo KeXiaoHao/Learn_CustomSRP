@@ -18,6 +18,7 @@ MonoBehaviour:
     copyColorReflection: 0
     copyDepth: 1
     copyDepthReflections: 0
+    renderScale: 1
   DynamicBatching: 0
   GPUInstancing: 0
   SRPBatches: 1

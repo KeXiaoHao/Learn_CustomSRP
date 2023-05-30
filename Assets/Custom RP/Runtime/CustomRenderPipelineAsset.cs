@@ -8,7 +8,7 @@ using UnityEngine.Rendering;
 public partial class CustomRenderPipelineAsset : RenderPipelineAsset
 {
     [SerializeField]
-    CameraBufferSettings cameraBuffer = new CameraBufferSettings { allowHDR = true };
+    CameraBufferSettings cameraBuffer = new CameraBufferSettings { allowHDR = true, renderScale = 1f};
     
     [SerializeField]
     private bool DynamicBatching = true, GPUInstancing = true, SRPBatches = true, useLightsPerObject = true;

@@ -1,4 +1,5 @@
 using System;
+using UnityEngine;
 using UnityEngine.Rendering;
 
 [Serializable]
@@ -10,6 +11,13 @@ public class CameraSettings
     public int renderingLayerMask = -1;
     
     public bool maskLights = false;
+    
+    public enum RenderScaleMode { Inherit, Multiply, Override } //渲染缩放模式 继承 相乘 覆盖
+
+    public RenderScaleMode renderScaleMode = RenderScaleMode.Inherit;
+
+    [Range(0.1f, 2f)]
+    public float renderScale = 1f;
     
     public bool overridePostFX = false;
 
@@ -26,4 +34,17 @@ public class CameraSettings
         source = BlendMode.One,
         destination = BlendMode.Zero
     };
+    
+    //////////////////////////////////////////////////////////////////////////////////////////////
+
+    /// <summary>
+    /// 根据渲染模式的选择来确定最终的渲染比例
+    /// </summary>
+    /// <param name="scale">渲染比例</param>
+    /// <returns></returns>
+    public float GetRenderScale(float scale)
+    {
+        return
+            renderScaleMode == RenderScaleMode.Inherit ? scale : renderScaleMode == RenderScaleMode.Override ? renderScale : scale * renderScale;
+    }
 }
