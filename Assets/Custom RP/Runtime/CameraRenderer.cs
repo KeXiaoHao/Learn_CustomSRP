@@ -110,7 +110,8 @@ public partial class CameraRenderer
         buffer.SetGlobalVector(bufferSizeId, new Vector4(1f / bufferSize.x, 1f / bufferSize.y, bufferSize.x, bufferSize.y)); //向shader传递缓冲区大小
         ExecuteBuffer();
         lighting.Setup(context, cullingResults, shadowSettings, useLightsPerObject, cameraSettings.maskLights ? cameraSettings.renderingLayerMask : -1); //灯光相关设置 传递数据 渲染阴影等
-        postFXStack.SetUp(context, camera, bufferSize, postFXSettings, useHDR, colorLUTResolution, cameraSettings.finalBlendMode, bufferSettings.bicubicRescaling); //后处理相关设置
+        bufferSettings.fxaa.enabled &= cameraSettings.allowFXAA;
+        postFXStack.SetUp(context, camera, bufferSize, postFXSettings, cameraSettings.keepAlpha, useHDR, colorLUTResolution, cameraSettings.finalBlendMode, bufferSettings.bicubicRescaling, bufferSettings.fxaa); //后处理相关设置
         buffer.EndSample(SampleName);
         
         Setup(); // 初始设置

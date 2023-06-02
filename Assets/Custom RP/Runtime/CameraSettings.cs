@@ -23,6 +23,11 @@ public class CameraSettings
 
     public PostFXSettings postFXSettings = default;
     
+    public bool allowFXAA = false;
+    
+    // 保持 Alpha 的原因是当多个摄像机堆叠透明度时
+    public bool keepAlpha = false; //默认计算亮度用a通道 勾选用g通道
+    
     [Serializable]
     public struct FinalBlendMode
     {

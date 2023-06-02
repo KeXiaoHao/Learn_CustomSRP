@@ -2,6 +2,8 @@ using UnityEngine;
 using UnityEngine.Rendering;
 //类似于使用命名空间，但用于类。它使类或结构体的所有常量、静态和类型成员都可以直接访问，而无需完全限定它们
 using static PostFXSettings;
+// ReSharper disable StringLiteralTypo
+// ReSharper disable CommentTypo
 
 public partial class PostFXStack
 {
@@ -26,7 +28,10 @@ public partial class PostFXStack
         ToneMappingACES,
         ToneMappingNeutral,
         ToneMappingReinhard,
-        Final,
+        ApplyColorGrade,
+        ApplyColorGradeWithLuma,
+        FXAA,
+        FXAAWithLuma,
         FinalRescale
     }
 
@@ -53,6 +58,8 @@ public partial class PostFXStack
         colorGradingLUTInLogId = Shader.PropertyToID("_ColorGradingLUTInLogC"),
         colorGradingLUTId = Shader.PropertyToID("_ColorGradingLUT"),
         copyBicubicId = Shader.PropertyToID("_CopyBicubic"),
+        colorGradingResultId = Shader.PropertyToID("_ColorGradingResult"),
+        fxaaConfigId = Shader.PropertyToID("_FXAAConfig"),
         finalResultId = Shader.PropertyToID("_FinalResult");
 
     public bool IsActive => settings != null; //当后处理设置不为空时返回true
@@ -69,7 +76,7 @@ public partial class PostFXStack
         }
     }
 
-    private bool useHDR;
+    private bool keepAlpha, useHDR;
     
     int colorLUTResolution;
 
@@ -80,14 +87,22 @@ public partial class PostFXStack
     private Vector2Int bufferSize;
     
     CameraBufferSettings.BicubicRescalingMode bicubicRescaling; //双三次采样
+
+    private CameraBufferSettings.FXAA fxaa; // f x a a 抗锯齿
+    
+    const string fxaaQualityLowKeyword = "FXAA_QUALITY_LOW",
+        fxaaQualityMediumKeyword = "FXAA_QUALITY_MEDIUM";
     
     ////////////////////////////////////////////////// buffer处理逻辑 //////////////////////////////////////////////////////////////////////
 
     /// <summary>
     /// 后处理有关设置
     /// </summary>
-    public void SetUp(ScriptableRenderContext context, Camera camera, Vector2Int bufferSize, PostFXSettings settings, bool useHDR, int colorLUTResolution, CameraSettings.FinalBlendMode finalBlendMode, CameraBufferSettings.BicubicRescalingMode bicubicRescaling)
+    public void SetUp(ScriptableRenderContext context, Camera camera, Vector2Int bufferSize, PostFXSettings settings, bool keepAlpha, bool useHDR, 
+        int colorLUTResolution, CameraSettings.FinalBlendMode finalBlendMode, CameraBufferSettings.BicubicRescalingMode bicubicRescaling,
+        CameraBufferSettings.FXAA fxaa)
     {
+        this.fxaa = fxaa;
         this.bicubicRescaling = bicubicRescaling;
         this.bufferSize = bufferSize;
         this.finalBlendMode = finalBlendMode;
@@ -97,6 +112,7 @@ public partial class PostFXStack
         //当有场景视图摄像机或游戏视图摄像机时 就启用后处理settings 否则为空
         this.settings = camera.cameraType <= CameraType.SceneView ? settings : null;
         this.useHDR = useHDR;
+        this.keepAlpha = keepAlpha;
         ApplySceneViewState();
     }
 
@@ -107,12 +123,12 @@ public partial class PostFXStack
     {
         if (DoBloom(sourceID))
         {
-            DoColorGradingAndToneMapping(bloomResultId);
+            DoFinal(bloomResultId);
             buffer.ReleaseTemporaryRT(bloomResultId);
         }
         else
         {
-            DoColorGradingAndToneMapping(sourceID);
+            DoFinal(sourceID);
         }
         context.ExecuteCommandBuffer(buffer); //提交指令
         buffer.Clear(); //清除缓冲区中的所有命令
@@ -335,10 +351,37 @@ public partial class PostFXStack
     }
     
     /// <summary>
-    /// 颜色分级和色调映射处理
+    /// 配置FXAA
+    /// </summary>
+    void ConfigureFXAA()
+    {
+        if (fxaa.quality == CameraBufferSettings.FXAA.Quality.Low)
+        {
+            buffer.EnableShaderKeyword(fxaaQualityLowKeyword);
+            buffer.DisableShaderKeyword(fxaaQualityMediumKeyword);
+        }
+        else if (fxaa.quality == CameraBufferSettings.FXAA.Quality.Medium)
+        {
+            buffer.DisableShaderKeyword(fxaaQualityLowKeyword);
+            buffer.EnableShaderKeyword(fxaaQualityMediumKeyword);
+        }
+        else
+        {
+            buffer.DisableShaderKeyword(fxaaQualityLowKeyword);
+            buffer.DisableShaderKeyword(fxaaQualityMediumKeyword);
+        }
+
+        //传递固定阈值 相对阈值 子像素混合
+        buffer.SetGlobalVector(fxaaConfigId, new Vector4(fxaa.fixedThreshold, fxaa.relativeThreshold, fxaa.subpixelBlending));
+    }
+    
+    ////////////////////////////////////////////////// 相关后处理的最终处理 //////////////////////////////////////////////////////////////////////
+    
+    /// <summary>
+    /// 最终处理
     /// </summary>
     /// <param name="sourceId">源纹理</param>
-    void DoColorGradingAndToneMapping(int sourceId)
+    void DoFinal(int sourceId)
     {
         ConfigureColorAdjustments();
         ConfigureWhiteBalance();
@@ -358,20 +401,47 @@ public partial class PostFXStack
         Draw(sourceId, colorGradingLUTId, pass);
         
         buffer.SetGlobalVector(colorGradingLUTParametersId, new Vector4(1f / lutWidth, 1f / lutHeight, lutHeight - 1f));
+
+        buffer.SetGlobalFloat(finalSrcBlendId, 1f);
+        buffer.SetGlobalFloat(finalDstBlendId, 0f); // // 将最终混合模式设置为 One Zero
+        
+        if (fxaa.enabled)
+        {
+            ConfigureFXAA();
+            // 如果启用了F X A A 立即执行颜色分级并将结果存储在新的临时 LDR 纹理中
+            buffer.GetTemporaryRT(colorGradingResultId, bufferSize.x, bufferSize.y, 0, FilterMode.Bilinear, RenderTextureFormat.Default);
+            Draw(sourceId, colorGradingResultId, keepAlpha ? Pass.ApplyColorGrade : Pass.ApplyColorGradeWithLuma);
+        }
         
         if (bufferSize.x == camera.pixelWidth)
         {
-            DrawFinal(sourceId, Pass.Final);
+            if (fxaa.enabled)
+            {
+                DrawFinal(colorGradingResultId, keepAlpha ? Pass.FXAA : Pass.FXAAWithLuma);
+                buffer.ReleaseTemporaryRT(colorGradingResultId);
+            }
+            else
+            {
+                DrawFinal(sourceId, Pass.ApplyColorGrade);
+            }
         }
         else
         {
             // 如果我们需要重新缩放渲染 那么我们必须绘制两次
-            buffer.SetGlobalFloat(finalSrcBlendId, 1f);
-            buffer.SetGlobalFloat(finalDstBlendId, 0f); // // 将最终混合模式设置为 One Zero
             // 首先获取与当前缓冲区大小匹配的新临时渲染纹理 当我们在其中存储LDR颜色时 我们可以使用默认的渲染纹理格式
             buffer.GetTemporaryRT(finalResultId, bufferSize.x, bufferSize.y, 0, FilterMode.Bilinear, RenderTextureFormat.Default);
             // 然后使用 Pass.Final 通道执行常规绘制 并将最终混合模式设置为 One Zero
-            Draw(sourceId, finalResultId, Pass.Final);
+
+            if (fxaa.enabled)
+            {
+                Draw(colorGradingResultId, finalResultId, keepAlpha ? Pass.FXAA : Pass.FXAAWithLuma);
+                buffer.ReleaseTemporaryRT(colorGradingResultId);
+            }
+            else
+            {
+                Draw(sourceId, finalResultId, Pass.ApplyColorGrade);
+            }
+            
             bool bicubicSampling =
                 bicubicRescaling == CameraBufferSettings.BicubicRescalingMode.UpAndDown ||
                 bicubicRescaling == CameraBufferSettings.BicubicRescalingMode.UpOnly &&
